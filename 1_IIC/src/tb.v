@@ -3,6 +3,7 @@
 `include "IIC.v"
 `include "EncapsulatedIO.v"
 `include "top.v"
+`include "IICMeta.v"
 
 module TB();
     reg clk;
@@ -11,8 +12,10 @@ module TB();
     SyncFIFO_TB _inst_SyncFIFO_TB(.in_clk(clk), .in_rst(rst));
     EdgeDetection_TB _inst_EdgeDetection_TB(.in_clk(clk), .in_rst(rst));
     IIC_SEND_TB _inst_IIC_Send_TB(.in_clk(clk), .in_rst(rst));
+    IIC_READ_TB _inst_IIC_Read_TB(.in_clk(clk), .in_rst(rst));
     EncapsulatedIIC_SEND_TB _inst_EIIC_SSend_TB(.in_clk(clk), .in_rst(rst));
     TOP_TB _inst_TOP_TB(.in_clk(clk), .in_rst(rst));
+    IICMeta_TB _inst_IICMeta_TB(.in_clk(clk), .in_rst(rst));
 
     always #1 clk<=~clk;
 

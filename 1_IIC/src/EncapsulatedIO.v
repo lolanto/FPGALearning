@@ -55,7 +55,7 @@ module EncapsulatedIIC(
 
     reg _r_iic_enable;
     reg [7:0] _r_iic_byte_to_send;
-    reg [1:0] _r_iic_instruction;
+    reg [2:0] _r_iic_instruction;
     wire _w_iic_is_completed;
 
     IIC _inst_iic(.in_clk(in_clk), .in_rst(in_rst)
@@ -66,8 +66,7 @@ module EncapsulatedIIC(
         , .out_sda_out(out_iic_sda)
         , .out_scl(out_iic_scl)
         , .out_is_completed(_w_iic_is_completed)
-        , .out_is_sending(out_iic_is_sending)
-        , .out_err_state(out_err_state)
+        , .out_sda_is_using(out_iic_is_sending)
     );
 
     reg [7:0] _r_fifo_write_data;
@@ -214,7 +213,7 @@ module EncapsulatedIIC(
         STATE_PRE_SEND_ADDR: begin
             _r_iic_enable <= 1'b1;
             _r_iic_byte_to_send <= {_r_device_address, 1'b0};
-            _r_iic_instruction <= `IIC_INST_WRITE_BYTE;
+            _r_iic_instruction <= `IIC_INST_SEND_BYTE;
         end
         STATE_SEND_ADDR: begin
             _r_iic_enable <= 1'b0;
@@ -225,7 +224,7 @@ module EncapsulatedIIC(
             _r_fifo_read_enable_when_sending <= 1'b1;
             _r_iic_byte_to_send <= _w_fifo_read_data;
             _r_iic_enable <= 1'b1;
-            _r_iic_instruction <= `IIC_INST_WRITE_BYTE;
+            _r_iic_instruction <= `IIC_INST_SEND_BYTE;
         end
         STATE_SEND_BYTE: begin
             _r_fifo_read_enable_when_sending <= 1'b0;
