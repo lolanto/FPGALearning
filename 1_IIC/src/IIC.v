@@ -46,6 +46,9 @@
 `define IIC_STATE_WAIT_COMPLETE `IIC_STATE_IGNORE_ACK + 1
 `define IIC_STATE_WAIT_COMPLETE_FOR_BYTES `IIC_STATE_WAIT_COMPLETE + 1
 
+`define IIC_WRITE_OPERATION_BIT 8'd0
+`define IIC_READ_OPERATION_BIT 8'd1
+
 module IIC(
     input wire in_clk,
     input wire in_rst,

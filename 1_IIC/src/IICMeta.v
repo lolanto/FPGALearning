@@ -142,14 +142,16 @@ module IICMeta(
 
     // 在状态即将发生切换的时候，记录上一次执行的指令，用来在发起repeat start的时候控制起始scl/sda信号
     always @(posedge in_clk) begin
-        if (_r_instruction != `IIC_META_INST_UNKNOWN && _r_next_instruction == `IIC_META_INST_UNKNOWN)
-            _r_prev_instruction = _r_instruction;
+        if (in_rst) begin
+            _r_prev_instruction <= `IIC_META_INST_UNKNOWN;
+        end
+        else if (_r_instruction != `IIC_META_INST_UNKNOWN && _r_next_instruction == `IIC_META_INST_UNKNOWN)
+            _r_prev_instruction <= _r_instruction;
     end
 
     always @(*) begin
         if (in_rst) begin
             _r_next_instruction = `IIC_META_INST_UNKNOWN;
-            // _r_prev_instruction = `IIC_META_INST_UNKNOWN;
         end
         else begin
             case (_r_instruction)
