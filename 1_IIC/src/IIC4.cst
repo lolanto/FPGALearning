@@ -5,11 +5,11 @@
 //Part Number: GW2AR-LV18QN88C8/I7
 //Device: GW2AR-18
 //Device Version: C
-//Created Time: Tue 08 27 22:51:29 2024
+//Created Time: Tue 08 27 23:23:49 2024
 
-IO_LOC "out_debug[5]" 20;
+IO_LOC "out_debug[5]" 71;
 IO_PORT "out_debug[5]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
-IO_LOC "out_debug[4]" 19;
+IO_LOC "out_debug[4]" 72;
 IO_PORT "out_debug[4]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
 IO_LOC "out_debug[3]" 18;
 IO_PORT "out_debug[3]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;

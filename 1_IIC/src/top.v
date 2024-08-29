@@ -14,10 +14,10 @@ module I2C_TM1650_BIT_ADDRESS(
     input wire [1:0] in_index,
     output wire [7:0] out_address
 );
-    localparam I2C_BIT_ADDRESS_3 = 8'h34;
-    localparam I2C_BIT_ADDRESS_2 = 8'h35;
-    localparam I2C_BIT_ADDRESS_1 = 8'h36;
-    localparam I2C_BIT_ADDRESS_0 = 8'h37;
+    localparam I2C_BIT_ADDRESS_3 = 8'h68;
+    localparam I2C_BIT_ADDRESS_2 = 8'h6A;
+    localparam I2C_BIT_ADDRESS_1 = 8'h6C;
+    localparam I2C_BIT_ADDRESS_0 = 8'h6E;
 
     reg [7:0] _r_address;
     always @(*) begin
@@ -104,19 +104,20 @@ module FetchByteFromEEPROM (
     assign out_is_completed = _r_out_is_completed;
 
     localparam EEPROM_DEVICE_ADDRESS = 8'hA0;
-    reg [7:0] _r_byte_address;
+    reg [15:0] _r_byte_address;
 
     localparam STATE_IDLE = 0;
     localparam STATE_START_FETCH = 1;
     localparam STATE_SEND_DEVICE_ADDRESS_WRITE = 2;
-    localparam STATE_SEND_BYTE_ADDRESS = 3;
+    localparam STATE_SEND_BYTE_ADDRESS_15_8 = 3;
+    localparam STATE_SEND_BYTE_ADDRESS_7_0 = 8;
     localparam STATE_SEND_REPEAT_START = 4;
     localparam STATE_SEND_DEVICE_ADDRESS_READ = 5;
     localparam STATE_READ_BYTE = 6;
     localparam STATE_STOP_FETCH = 7;
 
-    reg [2:0] _r_state;
-    reg [2:0] _r_next_state;
+    reg [3:0] _r_state;
+    reg [3:0] _r_next_state;
     reg _r_waitting_command;
 
     always @(posedge in_clk) begin
@@ -147,17 +148,29 @@ module FetchByteFromEEPROM (
             if (~in_iic_is_complete)
                 _r_next_state = STATE_SEND_DEVICE_ADDRESS_WRITE;
             else
-                _r_next_state = STATE_SEND_BYTE_ADDRESS;
+                _r_next_state = STATE_SEND_BYTE_ADDRESS_15_8;
         end
-        STATE_SEND_BYTE_ADDRESS: begin
+        STATE_SEND_BYTE_ADDRESS_15_8: begin
             if (~in_iic_is_complete)
-                _r_next_state = STATE_SEND_BYTE_ADDRESS;
+                _r_next_state = STATE_SEND_BYTE_ADDRESS_15_8;
+            else
+                _r_next_state = STATE_SEND_BYTE_ADDRESS_7_0;
+        end
+        STATE_SEND_BYTE_ADDRESS_7_0: begin
+            if (~in_iic_is_complete)
+                _r_next_state = STATE_SEND_BYTE_ADDRESS_7_0;
             else
                 _r_next_state = STATE_SEND_REPEAT_START;
         end
         STATE_SEND_REPEAT_START: begin
             if (~in_iic_is_complete)
                 _r_next_state = STATE_SEND_REPEAT_START;
+            else
+                _r_next_state = STATE_SEND_DEVICE_ADDRESS_READ;
+        end
+        STATE_SEND_DEVICE_ADDRESS_READ: begin
+            if (~in_iic_is_complete)
+                _r_next_state = STATE_SEND_DEVICE_ADDRESS_READ;
             else
                 _r_next_state = STATE_READ_BYTE;
         end
@@ -190,7 +203,7 @@ module FetchByteFromEEPROM (
 
     always @(posedge in_clk) begin
         if (in_rst) begin
-            _r_byte_address <= 8'd0;
+            _r_byte_address <= 16'd0;
             _r_out_iic_enable <= 1'b0;
             _r_out_iic_inst <= `IIC_INST_UNKNOWN;
             _r_out_is_completed <= 1'b0;
@@ -199,8 +212,7 @@ module FetchByteFromEEPROM (
         else begin
             case (_r_state)
             STATE_IDLE: begin
-                // _r_out_is_completed <= 1'b0;
-                _r_byte_address <= 8'd0;
+                _r_out_is_completed <= 1'b0;
                 _r_out_iic_enable <= 1'b0;
                 _r_out_iic_inst <= `IIC_INST_UNKNOWN;
                 _r_out_iic_byte_to_send <= 4'd0;
@@ -226,11 +238,22 @@ module FetchByteFromEEPROM (
                     _r_out_iic_inst <= `IIC_INST_UNKNOWN;
                 end
             end
-            STATE_SEND_BYTE_ADDRESS: begin
+            STATE_SEND_BYTE_ADDRESS_15_8: begin
                 if (~_r_waitting_command) begin
                     _r_out_iic_enable <= 1'b1;
                     _r_out_iic_inst <= `IIC_INST_SEND_BYTE;
-                    _r_out_iic_byte_to_send <= _r_byte_address;
+                    _r_out_iic_byte_to_send <= _r_byte_address[15:8];
+                end
+                else begin
+                    _r_out_iic_enable <= 1'b0;
+                    _r_out_iic_inst <= `IIC_INST_UNKNOWN;
+                end
+            end
+            STATE_SEND_BYTE_ADDRESS_7_0: begin
+                if (~_r_waitting_command) begin
+                    _r_out_iic_enable <= 1'b1;
+                    _r_out_iic_inst <= `IIC_INST_SEND_BYTE;
+                    _r_out_iic_byte_to_send <= _r_byte_address[7:0];
                     _r_byte_address <= _r_byte_address + 1;
                 end
                 else begin
@@ -262,7 +285,7 @@ module FetchByteFromEEPROM (
             STATE_READ_BYTE: begin
                 if (~_r_waitting_command) begin
                     _r_out_iic_enable <= 1'b1;
-                    _r_out_iic_inst <= `IIC_INST_RECV_BYTE;
+                    _r_out_iic_inst <= `IIC_INST_RECV_BYTE_WITHOUT_ACK;
                 end
                 else begin
                     _r_out_iic_enable <= 1'b0;
@@ -313,7 +336,7 @@ module ShowByteToTM1650 (
     assign out_iic_byte_to_send = _r_out_iic_byte_to_send;
     assign out_is_completed = _r_out_is_completed;
 
-    localparam TM1650_CONTROL_ADDRESS = 8'h24;
+    localparam TM1650_CONTROL_ADDRESS = 8'h48;
     localparam TM1650_LIGHTING_CMD_BYTE = 8'h15;
 
     localparam STATE_IDLE = 0;
@@ -527,9 +550,7 @@ module Top(
     input wire in_btn_s1,
     input wire in_btn_s2,
     output wire out_iic_scl,
-    inout wire in_out_iic_sda,
-
-    output wire [5:0] out_debug
+    inout wire in_out_iic_sda
 );
     wire in_rst = in_btn_s1;
 
@@ -611,15 +632,14 @@ module Top(
 
     reg [2:0] _r_state;
     reg [2:0] _r_next_state;
-
-    LDE_Debug _inst_led_debug(.in_value({_w_fetcher_is_completed, out_iic_scl, _w_out_iic_sda, _w_iic_is_sending, _r_state[1:0]}), .out_led(out_debug));
+    reg _r_waitting_command;
 
     always @(posedge in_clk) begin
         if (in_rst) begin
-            _r_state = STATE_IDLE;
+            _r_state <= STATE_IDLE;
         end
         else
-            _r_state = _r_next_state;
+            _r_state <= _r_next_state;
     end
 
     always @(*) begin
@@ -671,18 +691,14 @@ module Top(
         endcase
     end
 
-    reg _r_waitting_command;
-    // always @(posedge in_clk) begin
-    //     if (in_rst) begin
-    //         _r_waitting_command <= 1'b0;
-    //     end
-    //     else if (_r_state != _r_next_state)
-    //         _r_waitting_command <= 1'b0;
-    //     else
-    //         _r_waitting_command <= 1'b1;
-    // end
-    always @(*) begin
-        _r_waitting_command = _r_state == _r_next_state ? 1'b1 : 1'b0;
+    always @(posedge in_clk) begin
+        if (in_rst) begin
+            _r_waitting_command <= 1'b0;
+        end
+        else if (_r_state != _r_next_state)
+            _r_waitting_command <= 1'b0;
+        else
+            _r_waitting_command <= 1'b1;
     end
 
     always @(posedge in_clk) begin

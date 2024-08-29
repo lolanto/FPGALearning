@@ -209,10 +209,11 @@ module IIC(
         end
         `IIC_STATE_SEND_ACK: begin
             _r_iic_meta_instruction <= `IIC_META_INST_SEND_BIT;
-            _r_bit_to_send <= 1'b1; // TODO: 没有校验需要支持？接满8个bit就一定ACK？
+            _r_bit_to_send <= 1'b0; // TODO: 没有校验需要支持？接满8个bit就一定ACK？
         end
         `IIC_STATE_IGNORE_ACK: begin
-            _r_iic_meta_instruction <= `IIC_META_INST_RECV_BIT;
+            _r_iic_meta_instruction <= `IIC_META_INST_SEND_BIT;
+            _r_bit_to_send <= 1'b1;
         end
         `IIC_STATE_WAIT_COMPLETE: begin
             if (_w_iic_meta_is_completed) begin
