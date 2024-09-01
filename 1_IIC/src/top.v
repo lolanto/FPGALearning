@@ -74,6 +74,24 @@ module I2C_TM1650_DECIMAL_TO_BYTE_COMMAND(
     assign out_byte = _r_byte;
 endmodule
 
+/**
+ * @brief 用于向EEPROM器件读取指定地址的指定字节。该器件在收到使能信号(高电平)后，会向EEPROM发起一个字节的读取请求
+ * 期间会通过向iic器件(总线)来完成数据的请求。并在完成后发送完成信号
+ *
+ * @param in_clk 时钟信号
+ * @param in_rst 复位信号
+ * @param in_enable 使能信号，在器件完成任务之前需要重新拉低
+ * @return out_iic_enable 输出信号，告诉外部iic器件是否使能
+ * @return out_iic_inst 输出信号，告诉外部iic器件需要执行的指令
+ * @return out_iic_byte_to_send 输出信号，告诉外部iic器件要发送的字节信号
+ * @param in_iic_byte_read iic器件读取到的字节信息
+ * @param in_iic_is_compete 外部iic器件是否已经完成指令执行
+ * @return out_fetched_byte 从EEPROM器件读取到的字节信息，当out_is_competed信号被拉高时有效
+ * @return out_is_completed 器件工作执行完成
+ *
+ * @note 没有显式指定要读取的地址，目前该器件的地址读取是从0地址开始，每次使能后，地址+1
+ */
+
 module FetchByteFromEEPROM (
     input wire in_clk,
     input wire in_rst,
@@ -312,6 +330,20 @@ module FetchByteFromEEPROM (
 
 endmodule
 
+/**
+ * @brief 当器件被使能(使能信号置为高电平)，同时设置需要显示的字节数据。该器件会与外部的iic器件沟通(使能/发送指令/发送数据)，完成
+ * 该字节数据在数码管上的显示工作，并在完成后拉高完成信号
+ *
+ * @param in_clk 时钟信号
+ * @param in_rst 复位信号
+ * @param in_enable 使能信号，是否启用该器件，要在工作执行完成之前拉低
+ * @param in_byte_to_show 需要显示的字节，被当作是uint8字节，并转换成对应的整数显示
+ * @return out_iic_enable 输出信号，用来告诉iic器件是否需要使能
+ * @return out_iic_inst 输出信号，用来告诉iic器件需要执行的指令
+ * @return out_iic_byte_to_send 输出信号，用来告诉iic器件需要发送的字节信息
+ * @param in_iic_is_complete 外部iic器件是否执行完指定命令
+ * @return out_is_complete 当前器件是否执行完成
+ */
 module ShowByteToTM1650 (
     input wire in_clk,
     input wire in_rst,
