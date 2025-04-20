@@ -1,0 +1,7 @@
+`ifndef GLOBAL_DEFINE_V
+`define GLOBAL_DEFINE_V
+
+
+`define ENV_BASIC_FREQ 1_000_000
+
+`endif // GLOBAL_DEFINE_V

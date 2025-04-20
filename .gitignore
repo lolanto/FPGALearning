@@ -4,3 +4,5 @@
 results.xml
 __pycache__/
 sim_build/
+**/utils/
+!/utils/
