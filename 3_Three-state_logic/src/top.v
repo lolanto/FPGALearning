@@ -6,6 +6,14 @@
  * @return out_led_1 用来表明当前三态门的输入情况。当处于输入状态时，根据输入结果显示亮灭；当处于输出状态时，灯灭
  */
 
+/**
+ * 实验结果：
+ * 1. 当请求输出高阻抗时，输入能够读取到线上的实际值
+ * 2. 当请求输出低电平时，输入能够读取到的也是低电平
+ * 3. 当请求输出高电平时，输入能够读取到的也是高电平
+ * 4. 当请求输出高电平，但此时外部已经被拉低时，输入能够读取到的依旧是低电平！
+ */
+
 module Top(
     inout wire inout_wire,
     input wire in_btn_1,
@@ -23,7 +31,7 @@ module Top(
         _r_value_out = in_btn_2;
     end
 
-    wire _w_led_on = _w_trying_output ? 1'b0 : _r_value_in;
+    wire _w_led_on = _r_value_in;
     assign out_led_1 = ~_w_led_on; // 我用的板子led高电平灭，低电平亮
 
 endmodule
