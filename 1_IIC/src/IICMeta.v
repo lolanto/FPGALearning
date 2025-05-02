@@ -10,7 +10,7 @@
 `define BIT_COUNT_OF_IIC_META_INST 3
 // TODO: 接收开始和结束信号
 
-`define IIC_SIG_IDLE 1'b1
+`define IIC_SIG_IDLE 1'bz
 
 /**
  * IIC的最基础元件，只负责Bit的传递，开始和结束信号的传递
@@ -32,11 +32,12 @@
  * 使用方式和时序：
  * 1. 时钟上升沿将in_instruction置为需要执行的命令，否则请一直保持IIC_META_INST_UNKNOWN状态
  * 2. 当in_instruction被设置之后，将会进入执行阶段，期间修改in_instruction将无用
- * 3. in_instruction被修改成目标指令的同时，sda/scl将开始产生有效信号
+ * 3. in_instruction被修改成目标指令的同时，sda/scl将在**相同的时钟上升沿立即**开始产生有效信号
  * 4. 指令执行完成的时钟上升沿out_is_completed置为高电平，并在下一个时钟上升沿恢复低电平。当上层电路接收到out_is_completed置为高电平时
- * 器件已经进入了IIC_META_INST_UNKNOWN状态，它会将当前的in_instruction作为下一个执行的指令，因此**必须在此之前就将指令归为UNKNOWN!**
- * 假如指令是IIC_INST_SEND_BIT，那么需要发送的bit也应该在同时一并准备妥当
- * 假如指令是IIC_INST_RECV_BIT，那么out_is_completed置为高电平的同时，out_bit_read也将会是读取到的电平
+ * 4.1. 当前指令已经彻底执行完成，假如是连续任务，应该在此刻立即设置下一个指令及其所需的其它参数
+ * 4.2. 假如指令是IIC_INST_SEND_BIT，那么需要发送的bit也应该在同时一并准备妥当
+ * 4.3. 假如指令是IIC_INST_RECV_BIT，那么out_is_completed置为高电平的同时，out_bit_read也将会是读取到的电平
+ * 4.4. 假如没有接收到任何指令，器件将回到Idle状态
  */
 
  /**
@@ -65,10 +66,10 @@ module IICMeta(
 
     input wire in_sda_in,
     output wire out_sda_out,
-    output wire out_scl,
-    // TODO: 支持Clock Strech，别的设备能够暂停时钟信号的发起
-
     output wire out_sda_is_using,
+
+    input wire in_scl_in,
+    output wire out_scl_out,
     output wire out_scl_is_using,
 
     output wire out_is_completed
@@ -81,17 +82,26 @@ module IICMeta(
     reg [6:0] _r_clock_Divider = 0;
     
     reg _r_sda_out = 0; // 当前sda总线上要发送的bit
-    reg _r_sda_out_com;
+    // 这个是为了加速IICMeta对外界命令的响应而增加的寄存器
+    // 它会在外界指令到达的同一时钟沿设置好要发送的值
+    reg _r_sda_out_com; 
     assign out_sda_out = _r_sda_out_com;
 
     reg _r_is_sending = 0;
     reg _r_is_receving = 0;
     assign out_sda_is_using = _r_is_sending;
-    assign out_scl_is_using = _r_is_sending || _r_is_receving;
 
     reg _r_scl_out;
+    // 这个是为了加速IICMeta对外界命令的响应而增加的寄存器
+    // 它会在外界指令到达的同一时钟沿设置好要发送的值
     reg _r_scl_out_com;
-    assign out_scl = _r_scl_out_com;
+    assign out_scl_out = _r_scl_out_com;
+    wire _w_scl_in = in_scl_in;
+    // 当前scl总线想输出高电平，但是输入却是低电平，说明正在被外界强行拉低
+    wire _w_is_scl_force_low = _w_scl_in == 1'b0 && _r_scl_out_com == 1'b1;
+    assign out_scl_is_using = (_r_is_sending || _r_is_receving);
+    // 假如被外界强行拉低，或者没有被使用，缺处在低电平，说明可能发生了clock stretching
+    wire _w_is_clock_stretching = _w_is_scl_force_low || (!out_scl_is_using && _w_scl_in == 1'b0);
 
     reg _r_is_completed;
     assign out_is_completed = _r_is_completed;
@@ -105,9 +115,10 @@ module IICMeta(
     reg [`BIT_COUNT_OF_IIC_META_INST - 1:0] _r_instruction;
     reg [`BIT_COUNT_OF_IIC_META_INST - 1:0] _r_next_instruction;
     reg [`BIT_COUNT_OF_IIC_META_INST - 1:0] _r_prev_instruction;
-`define IS_UNKONWN (_r_instruction == `IIC_META_INST_UNKNOWN)
+`define IS_UNKONWN_INSTRUCTION (_r_instruction == `IIC_META_INST_UNKNOWN)
 `define PREV_INST_IS_NEITHER_UNKNOWN_NOR_STOP (_r_prev_instruction != `IIC_META_INST_UNKNOWN && _r_prev_instruction != `IIC_META_INST_STOP_TX)
-    wire [`BIT_COUNT_OF_IIC_META_INST - 1:0] _w_actual_instruction = `IS_UNKONWN ? in_instruction : _r_instruction;
+    // 为了加速指令的判断，因为指令的设置和指令真正被执行之间有一个始终的延迟，用这种方式，可以让外界设置的指令得到立即执行
+    wire [`BIT_COUNT_OF_IIC_META_INST - 1:0] _w_actual_instruction = `IS_UNKONWN_INSTRUCTION ? in_instruction : _r_instruction;
 
     always @(posedge in_clk) begin
         if (in_rst) begin
@@ -149,6 +160,7 @@ module IICMeta(
             _r_prev_instruction <= _r_instruction;
     end
 
+    // _r_next_instruction的状态转移逻辑
     always @(*) begin
         if (in_rst) begin
             _r_next_instruction = `IIC_META_INST_UNKNOWN;
@@ -156,6 +168,7 @@ module IICMeta(
         else begin
             case (_r_instruction)
             `IIC_META_INST_UNKNOWN: begin
+                // 当前处于空闲状态，可以用外部传入的in_instruction来设置_r_next_instruction
                 _r_next_instruction = in_instruction;
                 if (in_instruction == `IIC_META_INST_START_TX) begin
                     if (`PREV_INST_IS_NEITHER_UNKNOWN_NOR_STOP) begin
@@ -207,6 +220,7 @@ module IICMeta(
         end
     end
 
+    // 根据当前输入的命令，设置状态寄存器以及sda/scl输出关联的寄存器情况
     always @(*) begin
         _r_is_sending = 1'b0;
         _r_is_receving = 1'b0;
@@ -220,29 +234,30 @@ module IICMeta(
         `IIC_META_INST_SEND_BIT: begin
             _r_is_sending = 1'b1;
             _r_sda_out_com = _r_bit_to_send;
-            _r_scl_out_com = _r_scl_out;
+            _r_scl_out_com = `IS_UNKONWN_INSTRUCTION ? 1'b0 : _r_scl_out;
         end
         `IIC_META_INST_RECV_BIT: begin
             _r_is_receving = 1'b1;
-            _r_scl_out_com = `IS_UNKONWN ? 1'b0 : _r_scl_out;
+            _r_scl_out_com = `IS_UNKONWN_INSTRUCTION ? 1'b0 : _r_scl_out;
         end
         `IIC_META_INST_START_TX: begin
             // 这里在假设执行StartTX之前，总线都处在高电平状态
             _r_is_sending = 1'b1;
-            _r_sda_out_com = `IS_UNKONWN ? 1'b1 : _r_sda_out;
-            _r_scl_out_com = `IS_UNKONWN ? (`PREV_INST_IS_NEITHER_UNKNOWN_NOR_STOP ? 1'b0 : 1'b1) : _r_scl_out;
+            _r_sda_out_com = `IS_UNKONWN_INSTRUCTION ? 1'b1 : _r_sda_out;
+            _r_scl_out_com = `IS_UNKONWN_INSTRUCTION ? (`PREV_INST_IS_NEITHER_UNKNOWN_NOR_STOP ? 1'b0 : 1'b1) : _r_scl_out;
         end
         `IIC_META_INST_STOP_TX: begin
             // 这里在假设执行StopTX之前，总线处在低电平状态
+            // 因为之前发送bit的指令，最后都会将scl总线拉到低电平，stop之前肯定是它
             _r_is_sending = 1'b1;
-            _r_sda_out_com = `IS_UNKONWN ? 1'b0 : _r_sda_out;
-            _r_scl_out_com = `IS_UNKONWN ? 1'b0 : _r_scl_out;
+            _r_sda_out_com = `IS_UNKONWN_INSTRUCTION ? 1'b0 : _r_sda_out;
+            _r_scl_out_com = `IS_UNKONWN_INSTRUCTION ? 1'b0 : _r_scl_out;
         end
         `IIC_META_INST_REPEAT_START_TX: begin
             // 这里在假设执行Repeat StartTX之前，总线处在低电平状态
             _r_is_sending = 1'b1;
-            _r_sda_out_com = `IS_UNKONWN ? 1'b1 : _r_sda_out;
-            _r_scl_out_com = `IS_UNKONWN ? 1'b0 : _r_scl_out;
+            _r_sda_out_com = `IS_UNKONWN_INSTRUCTION ? 1'b1 : _r_sda_out;
+            _r_scl_out_com = `IS_UNKONWN_INSTRUCTION ? 1'b0 : _r_scl_out;
         end
         endcase
     end
@@ -251,25 +266,36 @@ module IICMeta(
         if (in_rst) begin
             _r_sda_out <= `IIC_SIG_IDLE;
             _r_scl_out <= `IIC_SIG_IDLE;
-            _r_clock_Divider <= 7'd2;
+            _r_clock_Divider <= 7'd1;
             _r_bit_read <= 1'b0;
+        end
+        else if (_w_is_clock_stretching) begin
+            // 假如当前检查到处在clock stretching状态，则将计数器重置，目的是让bit/开始/结束重新发送
+            _r_clock_Divider <= 7'd2;
         end
         else begin
             case (_r_instruction)
             `IIC_META_INST_UNKNOWN: begin
-                _r_clock_Divider <= 7'd2;
                 /**
                  * clock的初始值之所以是2，是因为
-                 * [第0个时钟周期] 从上层器件设置instruction开始，sda/scl总线就已经开始工作
-                 * [第1个时钟周期] _r_next_instruction -> _r_instruction的赋值
-                 * 因此在进到之后的状态时，其实已经是在执行第2个时钟周期了
+                 * 1. 时钟的初始值从1开始计算，0代表128.
+                 * 2. [第0个时钟周期] 从上层器件设置instruction开始，sda/scl总线就已经开始工作。而时序电路会慢一个tick，因此从2开始
                  */
+                _r_clock_Divider <= 7'd2;
+                _r_sda_out <= `IIC_SIG_IDLE;
+                _r_scl_out <= `IIC_SIG_IDLE;
                 _r_bit_read <= 1'b0;
+                // 以下行为是为了保证在_r_instruction即将被修改的时候，能够提前执行scl/sda状态，核心是提高响应速度
                 if (_r_next_instruction == `IIC_META_INST_START_TX) begin
+                    _r_scl_out <= 1'b1;
                     _r_sda_out <= 1'b1;
                 end
                 else if (_r_next_instruction == `IIC_META_INST_STOP_TX) begin
+                    _r_scl_out <= 1'b0;
                     _r_sda_out <= 1'b0;
+                end
+                else if (_r_next_instruction == `IIC_META_INST_SEND_BIT) begin
+                    _r_scl_out <= 1'b0;
                 end
             end
             `IIC_META_INST_START_TX: begin
@@ -334,7 +360,7 @@ module IICMeta(
                 end
             end
             `IIC_META_INST_RECV_BIT: begin
-                // 目前假设自己就是控制器，因此从总线上读取，也是要发起时钟信号
+                // TODO: 目前假设自己就是控制器，因此从总线上读取，也是要发起时钟信号
                 _r_clock_Divider <= _r_clock_Divider + 7'd1;
 
                 if (_r_clock_Divider[6:5] == 2'b00) begin
@@ -357,7 +383,9 @@ module IICMeta(
         end
     end
 
-    // 提前一个时钟周期发起_r_is_completed信号，这样在指令真正执行完的时钟上升沿，上层器件可以及时收到信号
+    // 提前一个时钟周期发起_r_is_completed信号
+    // 这样在指令真正执行完最后一个scl时钟周期后的第一个clk上升沿
+    // 外部器件可以立即开始设置instruction以及send_bit的值
     always @(posedge in_clk) begin
         if (in_rst) begin
             _r_is_completed <= 1'b0;
@@ -365,28 +393,13 @@ module IICMeta(
         else begin
             _r_is_completed <= 1'b0;
             case (_r_instruction)
-            `IIC_META_INST_START_TX: begin
+            `IIC_META_INST_START_TX, `IIC_META_INST_STOP_TX: begin
                 if (_r_clock_Divider == 7'b11_00000 - 1) begin
                     _r_is_completed <= 1'b1;
                 end
             end
-            `IIC_META_INST_STOP_TX: begin
-                if (_r_clock_Divider == 7'b11_00000 - 1) begin
-                    _r_is_completed <= 1'b1;
-                end
-            end
-            `IIC_META_INST_SEND_BIT: begin
-                if (_r_clock_Divider == 7'b11_11111 - 1) begin
-                    _r_is_completed <= 1'b1;
-                end
-            end
-            `IIC_META_INST_RECV_BIT: begin
-                if (_r_clock_Divider == 7'b11_11111 - 1) begin
-                    _r_is_completed <= 1'b1;
-                end
-            end
-            `IIC_META_INST_REPEAT_START_TX: begin
-                if (_r_clock_Divider == 7'b11_11111 - 1) begin
+            `IIC_META_INST_SEND_BIT, `IIC_META_INST_RECV_BIT, `IIC_META_INST_REPEAT_START_TX: begin
+                if (_r_clock_Divider == 7'b11_11111) begin // 这里没有'-1'，是因为它们的结束值是00_00000(溢出)
                     _r_is_completed <= 1'b1;
                 end
             end
@@ -394,7 +407,7 @@ module IICMeta(
         end
     end
 
-`undef IS_UNKONWN
+`undef IS_UNKONWN_INSTRUCTION
 endmodule
 
 
