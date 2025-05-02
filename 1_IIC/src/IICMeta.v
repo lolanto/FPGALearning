@@ -297,6 +297,9 @@ module IICMeta(
                 else if (_r_next_instruction == `IIC_META_INST_SEND_BIT) begin
                     _r_scl_out <= 1'b0;
                 end
+                else if (_r_next_instruction == `IIC_META_INST_RECV_BIT) begin
+                    _r_scl_out <= 1'b0;
+                end
             end
             `IIC_META_INST_START_TX: begin
                 _r_clock_Divider <= _r_clock_Divider + 7'd1;

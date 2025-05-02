@@ -35,7 +35,7 @@ g_test_case_enable_settings = {
     'send_1_bit': False,
     'send_0_bit': False,
     'send_byte': False,
-    'send_common': True,
+    'send_common': False,
     'recv_1_bit': True,
 }
 
@@ -55,6 +55,10 @@ def check_scl_is_using_as(dut, expect_value):
 def check_sda_is_using_as(dut, expect_value):
     assert dut.out_sda_out.value == expect_value
     assert dut.out_sda_is_using.value == 1
+
+def check_sda_is_in_high_resitance_state(dut):
+    assert dut.out_sda_out.value == 'z'
+    assert dut.out_sda_is_using == 0
 
 # 所有用例结束时候，期望的结束状态的信号
 def check_end_of_sigs(dut):
@@ -372,7 +376,45 @@ async def send_common(dut):
     check_end_of_sigs(dut)
 
 
+'''
+测试用例：接收一个bit信号(标准模式)
+'''
+@cocotb.test(skip=not g_test_case_enable_settings['recv_1_bit'])
+async def recv_1_bit_sig(dut):
+    # 创建一个时钟对象，驱动in_clk输入信号，每2ns为一个周期
+    c = Clock(dut.in_clk, 2, units='ns')
+    await cocotb.start(c.start()) # 告诉时钟对象可以开始工作，并直接返回。此时时钟就绪，模拟器还没开始运作
+    await reset_signal(dut)
+    print("Start Simulate")
+    sda_in_sigs = []
+    scl_out_sigs = []
+    dut.in_instruction.value = IIC_META_INST_RECV_BIT
+    dut.in_sda_in.value = 1
+    await RisingEdge(dut.in_clk)
+    # 一个上升沿后恢复命令
+    dut.in_instruction.value = IIC_META_INST_UNKNOWN
+    # 指令配置之后的第一个时钟上升沿，检查scl和sda的初始状态
+    check_scl_is_using_as(dut, 0)
+    assert dut.out_is_completed.value == 0
 
+    scl_out_sigs.append(int(dut.out_scl_out.value))
+    sda_in_sigs.append(int(dut.in_sda_in.value))
+
+    iter_count = 0
+    while True:
+        await RisingEdge(dut.in_clk)
+        scl_out_sigs.append(int(dut.out_scl_out.value))
+        sda_in_sigs.append(int(dut.in_sda_in.value))
+        check_sda_is_in_high_resitance_state(dut)
+        if dut.out_is_completed.value == 1:
+            break
+        iter_count += 1
+        if iter_count > 5000:
+            break
+    assert iter_count < 5000
+
+    assert dut.out_bit_read.value == 1
+    try_to_match_iic_sigs([ IIC_Checker.Bit_Checker(1) ], scl_out_sigs, sda_in_sigs)
 
 
 def main():
