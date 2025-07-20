@@ -56,6 +56,12 @@
   *     x: IS_UNKNOWN == 1;
   */
 
+ /**
+  * 当需要发送bit但是检查到clk总线被钳低时，触发Clock Streching
+  * 当前的设计是，假如在发送bit的时候，clk总线被钳低，那么将会重新发送这个bit。
+  * 对应的_r_clock_Divider将会被重置为0，重新开始计时
+  */
+
 module IICMeta(
     input wire in_clk,
     input wire in_rst,
@@ -100,8 +106,11 @@ module IICMeta(
     // 当前scl总线想输出高电平，但是输入却是低电平，说明正在被外界强行拉低
     wire _w_is_scl_force_low = _w_scl_in == 1'b0 && _r_scl_out_com == 1'b1;
     assign out_scl_is_using = (_r_is_sending || _r_is_receving);
-    // 假如被外界强行拉低，或者没有被使用，缺处在低电平，说明可能发生了clock stretching
+    // clock_stretching的情况包括：
+    // 1. 要拉高scl总线时，输入的scl总线却是低电平
+    // 2. scl总线没有被使用(高电平)，但是输入的scl总线是低电平
     wire _w_is_clock_stretching = _w_is_scl_force_low || (!out_scl_is_using && _w_scl_in == 1'b0);
+
 
     reg _r_is_completed;
     assign out_is_completed = _r_is_completed;
@@ -137,14 +146,14 @@ module IICMeta(
         if (in_rst) begin
             _r_bit_to_send_clk <= 1'b1;
         end
-        else if (_r_instruction == `IIC_META_INST_UNKNOWN)
+        else if `IS_UNKONWN_INSTRUCTION // << 用户设置的指令还没落实到_r_instruction上，为了提高响应速度，直接拿用户的输入作为输出
             _r_bit_to_send_clk <= in_bit_to_send;
         else
             _r_bit_to_send_clk <= _r_bit_to_send_clk;
     end
 
     always @(*) begin
-        if (_r_instruction == `IIC_META_INST_UNKNOWN)
+        if `IS_UNKONWN_INSTRUCTION // << 用户设置的指令还没落实到_r_instruction上，为了提高响应速度，直接拿用户的输入作为输出
             _r_bit_to_send = in_bit_to_send;
         else
             _r_bit_to_send = _r_bit_to_send_clk;
@@ -271,7 +280,9 @@ module IICMeta(
         end
         else if (_w_is_clock_stretching) begin
             // 假如当前检查到处在clock stretching状态，则将计数器重置，目的是让bit/开始/结束重新发送
-            _r_clock_Divider <= 7'd2;
+            // 这里重置为0，而不是2。是因为这里是“重启指令”，而其它正常执行的指令，它们因为有“指令一设置，scl/sda立即响应”的设计，天然就会提前完成1个tick
+            // 但是“重启”过程没有这个提前量，所以这里才重置为0。
+            _r_clock_Divider <= 7'd0;
         end
         else begin
             case (_r_instruction)

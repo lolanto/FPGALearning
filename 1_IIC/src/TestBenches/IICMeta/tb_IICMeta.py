@@ -36,7 +36,8 @@ g_test_case_enable_settings = {
     'send_0_bit': False,
     'send_byte': False,
     'send_common': False,
-    'recv_1_bit': True,
+    'recv_1_bit': False,
+    'clock_stretching': True
 }
 
 # 通用的复位行为
@@ -416,6 +417,58 @@ async def recv_1_bit_sig(dut):
     assert dut.out_bit_read.value == 1
     try_to_match_iic_sigs([ IIC_Checker.Bit_Checker(1) ], scl_out_sigs, sda_in_sigs)
 
+
+'''
+测试用例：发送时候突然遇到了时钟延展的情况
+预期行为：在发送bit的时候，clk总线被钳低，那么将会重新发送这个bit。
+'''
+@cocotb.test(skip=not g_test_case_enable_settings['clock_stretching'])
+async def sending_while_clock_stretching(dut):
+    try_debug()
+    # 创建一个时钟对象，驱动in_clk输入信号，每2ns为一个周期
+    c = Clock(dut.in_clk, 2, units='ns')
+    await cocotb.start(c.start()) # 告诉时钟对象可以开始工作，并直接返回。此时时钟就绪，模拟器还没开始运作
+    await reset_signal(dut)
+    print("Start Simulate")
+    dut.in_instruction.value = IIC_META_INST_SEND_BIT
+    dut.in_bit_to_send.value = 1
+    await RisingEdge(dut.in_clk)
+    dut.in_instruction.value = IIC_META_INST_UNKNOWN
+    check_scl_is_using_as(dut, 0)
+    check_sda_is_using_as(dut, 1)
+
+    assert dut.out_is_completed.value == 0
+    # IICMeta模块执行一个指令的需要的时钟周期总共是2^7个
+    # 发送bit的时钟周期被拆分成4段：
+    # 开始阶段，SCL处于低电平，时钟周期为2^5
+    # 发送阶段，SCL处于高电平，时钟周期为2^6
+    # 结束阶段，SCL处于低电平，时钟周期为2^5
+    clk_count_for_start = 2**5
+    clk_count_for_send = 2**6
+    clk_count_for_end = 2**5
+    clk_count_initial = 2 # IICMeta模块的时钟周期初始值为2
+    for _ in range(clk_count_for_start - clk_count_initial - 2): # '-1'是为了增加一点容错，我怕算错周期，延后了钳制时机
+        await RisingEdge(dut.in_clk)
+    for _ in range(50):
+        dut.in_scl_in.value = 0 # 模拟钳制SCL总线
+        await RisingEdge(dut.in_clk)
+    dut.in_scl_in.value = 1 # 恢复SCL总线
+    await RisingEdge(dut.in_clk) # 执行一个tick，给IICMeta模块一个时钟周期的时间来从钳制转成“重启”
+    # 这里会存在一个问题是，一旦从机解除钳制，scl主线会被主机直接拉高。因为主机在时钟延展期间一直在尝试拉高总线
+    # 主机只有等钳制解除的下一个时钟上升沿，才能识别到总线被成功拉高，继而重新执行命令(将scl再拉低)
+    # 放开，让bit发送指令执行
+    sda_out_sigs = []
+    scl_out_sigs = []
+    while True:
+        await RisingEdge(dut.in_clk)
+        sda_out_sigs.append(int(dut.out_sda_out.value))
+        scl_out_sigs.append(int(dut.out_scl_out.value))
+        check_scl_and_sda_is_using_and_not_in_high_resitance_state(dut)
+        if dut.out_is_completed.value == 1:
+            break
+    # 校验sda和scl的输出信号
+    try_to_match_iic_sigs([ IIC_Checker.Bit_Checker(1) ], scl_out_sigs, sda_out_sigs)
+    
 
 def main():
     proj_path = os.path.dirname(os.path.abspath(__file__))

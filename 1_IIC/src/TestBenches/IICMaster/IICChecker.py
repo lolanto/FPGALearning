@@ -3,7 +3,7 @@
 IIC_CLOCK_INTERVAL= 128 # 当前IIC一个时钟周期的长度总共有128个外部时钟构成
 ONE_HALF_IIC_CLOCK_INTERVAL = IIC_CLOCK_INTERVAL // 2
 ONE_FOURTH_IIC_CLOCK_INTERVAL = IIC_CLOCK_INTERVAL // 4
-THREE_FOURTH_IIC_CLOCK_INTERVAL = IIC_CLOCK_INTERVAL * 3 // 4
+THREE_FOURTHS_IIC_CLOCK_INTERVAL = IIC_CLOCK_INTERVAL * 3 // 4
 USING_DESIGN_IIC_CLOCK_INTERVAL = True # 是否开启IIC时钟周期检查
 
 # 用户提供scl以及sda的信号序列，检查是否符合IIC协议
@@ -64,36 +64,77 @@ class IIC_Checker():
         def is_bus_no_change(self, input_scl, input_sda):
             """检查当前输入的scl和sda信号是否都没有变化"""
             return self.is_scl_no_change(input_scl) and self.is_sda_no_change(input_sda)
+        # 1/4 ################################################################################
+        def is_begin_of_one_fourth_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之一的开始"""
+            if not USING_DESIGN_IIC_CLOCK_INTERVAL:
+                return True
+            return self._update_tick_count == 0
 
-        def is_one_fourth_iic_clock_interval(self):
-            """检查当前输入的时钟周期，是否已经达到了IIC时钟周期的四分之一"""
+        def is_inside_one_fourth_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之一"""
+            if not USING_DESIGN_IIC_CLOCK_INTERVAL:
+                return True
+            return self._update_tick_count < ONE_FOURTH_IIC_CLOCK_INTERVAL
+        
+        def is_end_of_one_fourth_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否已经达到了IIC时钟周期的四分之一的结束"""
+            if not USING_DESIGN_IIC_CLOCK_INTERVAL:
+                return True
+            return self._update_tick_count == ONE_FOURTH_IIC_CLOCK_INTERVAL - 1
+        # 2/4 ################################################################################
+        def is_begin_of_two_fourths_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之二的开始"""
             if not USING_DESIGN_IIC_CLOCK_INTERVAL:
                 return True
             return self._update_tick_count == ONE_FOURTH_IIC_CLOCK_INTERVAL
         
-        def is_one_half_iic_clock_interval(self):
-            """检查当前输入的时钟周期，是否已经走完1/2时钟周期"""
+        def is_inside_two_fourths_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之二"""
+            if not USING_DESIGN_IIC_CLOCK_INTERVAL:
+                return True
+            return self._update_tick_count < ONE_HALF_IIC_CLOCK_INTERVAL
+        
+        def is_end_of_two_fourths_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之二的结束"""
+            if not USING_DESIGN_IIC_CLOCK_INTERVAL:
+                return True
+            return self._update_tick_count == ONE_HALF_IIC_CLOCK_INTERVAL - 1
+        # 3/4 ################################################################################
+        def is_begin_of_three_fourths_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之三的开始"""
             if not USING_DESIGN_IIC_CLOCK_INTERVAL:
                 return True
             return self._update_tick_count == ONE_HALF_IIC_CLOCK_INTERVAL
         
-        def is_three_fourth_iic_clock_interval(self):
-            """检查当前输入的时钟周期，是否已经走完3/4时钟周期"""
+        def is_inside_three_fourths_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之三"""
             if not USING_DESIGN_IIC_CLOCK_INTERVAL:
                 return True
-            return self._update_tick_count == THREE_FOURTH_IIC_CLOCK_INTERVAL
+            return self._update_tick_count < THREE_FOURTHS_IIC_CLOCK_INTERVAL
         
-        def is_three_fourth_iic_clock_interval_minus_one(self):
-            """检查当前输入的时钟周期，是否已经走完3/4时钟周期 减一"""
+        def is_end_of_three_fourths_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之三的结束"""
             if not USING_DESIGN_IIC_CLOCK_INTERVAL:
                 return True
-            return self._update_tick_count == THREE_FOURTH_IIC_CLOCK_INTERVAL - 1
-
-        def is_one_first_iic_clock_interval_minus_one(self):
-            """检查当前输入的时钟周期，是否已经走完了所有的IIC时钟周期 减一"""
+            return self._update_tick_count == THREE_FOURTHS_IIC_CLOCK_INTERVAL - 1
+        # 4/4 ################################################################################
+        def is_begin_of_four_fourths_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之四的开始"""
+            if not USING_DESIGN_IIC_CLOCK_INTERVAL:
+                return True
+            return self._update_tick_count == THREE_FOURTHS_IIC_CLOCK_INTERVAL
+        def is_inside_four_fourths_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之四"""
+            if not USING_DESIGN_IIC_CLOCK_INTERVAL:
+                return True
+            return self._update_tick_count < IIC_CLOCK_INTERVAL
+        def is_end_of_four_fourths_iic_clock_interval(self):
+            """检查当前输入的时钟周期，是否处于IIC时钟周期的四分之四的结束"""
             if not USING_DESIGN_IIC_CLOCK_INTERVAL:
                 return True
             return self._update_tick_count == IIC_CLOCK_INTERVAL - 1
+        #####################################################################################
 
         def pre_update(self, input_scl, input_sda):
             """在更新之前，记录当前的scl和sda状态，并更新边沿计数"""
@@ -126,55 +167,58 @@ class IIC_Checker():
     class Start_Checker(Base_Checker):
         def __init__(self):
             super().__init__()
-            self.half_half_scl_cycle_interval = 0
-            self.scl_cycle = 0
         # scl，sda都处于高电平状态
         def is_in_state_1(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 0 \
-                and self._sda_rising_edge_count == 0 \
                 and self._scl_falling_edge_count == 0 \
-                and self._sda_falling_edge_count == 0 \
                 and input_scl == 1 \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 0 \
                 and input_sda == 1 \
-                and super().is_bus_no_change(input_scl, input_sda)
+                and super().is_bus_no_change(input_scl, input_sda) \
+                and super().is_inside_one_fourth_iic_clock_interval()
         # scl保持高电平，sda被拉低
         def is_change_to_state_2(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 0 \
-                and self._sda_rising_edge_count == 0 \
                 and self._scl_falling_edge_count == 0 \
-                and self._sda_falling_edge_count == 1 \
                 and input_scl == 1 \
+                and super().is_scl_no_change(input_scl) \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 1 \
                 and input_sda == 0 \
                 and super().is_sda_falling(input_sda) \
-                and not super().is_scl_falling(input_scl)
+                and super().is_begin_of_two_fourths_iic_clock_interval()
         # scl处于高电平，sda处于低电平
         def is_in_state_2(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 0 \
-                and self._sda_rising_edge_count == 0 \
                 and self._scl_falling_edge_count == 0 \
-                and self._sda_falling_edge_count == 1 \
                 and input_scl == 1 \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 1 \
                 and input_sda == 0 \
-                and super().is_bus_no_change(input_scl, input_sda)
+                and super().is_bus_no_change(input_scl, input_sda) \
+                and super().is_inside_two_fourths_iic_clock_interval()
         # scl被拉低，sda处于低电平
         def is_change_to_state_3(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 0 \
-                and self._sda_rising_edge_count == 0 \
                 and self._scl_falling_edge_count == 1 \
-                and self._sda_falling_edge_count == 1 \
                 and input_scl == 0 \
+                and super().is_scl_falling(input_scl) \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 1 \
                 and input_sda == 0 \
-                and not super().is_sda_falling(input_sda) \
-                and super().is_scl_falling(input_scl)
+                and super().is_sda_no_change(input_sda) \
+                and super().is_begin_of_three_fourths_iic_clock_interval()
         # scl和sda同时处于低电平
         def is_in_state_3(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 0 \
                 and self._sda_rising_edge_count == 0 \
+                and input_scl == 0 \
                 and self._scl_falling_edge_count == 1 \
                 and self._sda_falling_edge_count == 1 \
-                and input_scl == 0 \
                 and input_sda == 0 \
-                and super().is_bus_no_change(input_scl, input_sda)
+                and super().is_bus_no_change(input_scl, input_sda) \
+                and super().is_inside_three_fourths_iic_clock_interval()
 
         def get_state_sig(self):
             return IIC_Checker.IIC_SIG_START
@@ -185,25 +229,14 @@ class IIC_Checker():
             if self.is_in_state_1(input_scl, input_sda):
                 pass
             elif self.is_change_to_state_2(input_scl, input_sda):
-                if not super().is_one_fourth_iic_clock_interval():
-                    return False
-                self.scl_cycle = 0.25
-                self.half_half_scl_cycle_interval += 1
+                pass
             elif self.is_in_state_2(input_scl, input_sda):
-                self.half_half_scl_cycle_interval += 1
+                pass
             elif self.is_change_to_state_3(input_scl, input_sda):
-                if not super().is_one_half_iic_clock_interval():
-                    return False
-                self.scl_cycle = 0.75
-                self.half_half_scl_cycle_interval -= 1
+                pass
             elif self.is_in_state_3(input_scl, input_sda):
-                self.half_half_scl_cycle_interval -= 1
-                if self.half_half_scl_cycle_interval == 0:
-                    if not super().is_three_fourth_iic_clock_interval_minus_one():
-                        return False
-                    # finish!
+                if super().is_end_of_three_fourths_iic_clock_interval():
                     self._is_finished = True
-                    pass
             else:
                 return False
 
@@ -220,51 +253,55 @@ class IIC_Checker():
     class Stop_Checker(Base_Checker):
         def __init__(self):
             super().__init__()
-            self.half_half_scl_cycle_interval = 0
-            self.scl_cycle = 0
         # scl和sda同时处于低电平
         def is_in_state_1(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 0 \
-                and self._sda_rising_edge_count == 0 \
                 and self._scl_falling_edge_count == 0 \
-                and self._sda_falling_edge_count == 0 \
                 and input_scl == 0 \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 0 \
                 and input_sda == 0 \
-                and super().is_bus_no_change(input_scl, input_sda)
+                and super().is_bus_no_change(input_scl, input_sda) \
+                and super().is_inside_one_fourth_iic_clock_interval()
         # scl被拉高，sda处于低电平
         def is_change_to_state_2(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 1 \
-                and self._sda_rising_edge_count == 0 \
                 and self._scl_falling_edge_count == 0 \
-                and self._sda_falling_edge_count == 0 \
                 and input_scl == 1 \
+                and super().is_scl_rising(input_scl) \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 0 \
                 and input_sda == 0 \
-                and super().is_scl_rising(input_scl)
+                and super().is_sda_no_change(input_sda) \
+                and super().is_begin_of_two_fourths_iic_clock_interval()
         # scl处于高电平，sda处于低电平
         def is_in_state_2(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 1 \
-                and self._sda_rising_edge_count == 0 \
                 and self._scl_falling_edge_count == 0 \
-                and self._sda_falling_edge_count == 0 \
                 and input_scl == 1 \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 0 \
                 and input_sda == 0 \
-                and super().is_bus_no_change(input_scl, input_sda)
+                and super().is_bus_no_change(input_scl, input_sda) \
+                and super().is_inside_two_fourths_iic_clock_interval()
         # scl处于高电平，sda被拉高
         def is_change_to_state_3(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 1 \
-                and self._sda_rising_edge_count == 1 \
                 and self._scl_falling_edge_count == 0 \
-                and self._sda_falling_edge_count == 0 \
                 and input_scl == 1 \
+                and super().is_scl_no_change(input_scl) \
+                and self._sda_rising_edge_count == 1 \
+                and self._sda_falling_edge_count == 0 \
                 and input_sda == 1 \
-                and super().is_sda_rising(input_sda)
+                and super().is_sda_rising(input_sda) \
+                and super().is_begin_of_three_fourths_iic_clock_interval()
         # scl和sda同时处于高电平
         def is_in_state_3(self, input_scl, input_sda):
             return self._scl_rising_edge_count == 1 \
-                and self._sda_rising_edge_count == 1 \
                 and self._scl_falling_edge_count == 0 \
-                and self._sda_falling_edge_count == 0 \
                 and input_scl == 1 \
+                and self._sda_rising_edge_count == 1 \
+                and self._sda_falling_edge_count == 0 \
                 and input_sda == 1 \
                 and super().is_bus_no_change(input_scl, input_sda)
 
@@ -277,25 +314,14 @@ class IIC_Checker():
             if self.is_in_state_1(input_scl, input_sda):
                 pass
             elif self.is_change_to_state_2(input_scl, input_sda):
-                if not super().is_one_fourth_iic_clock_interval():
-                    return False
-                self.scl_cycle = 0.25
-                self.half_half_scl_cycle_interval += 1
+                pass
             elif self.is_in_state_2(input_scl, input_sda):
-                self.half_half_scl_cycle_interval += 1
+                pass
             elif self.is_change_to_state_3(input_scl, input_sda):
-                if not super().is_one_half_iic_clock_interval():
-                    return False
-                self.scl_cycle = 0.75
-                self.half_half_scl_cycle_interval -= 1
+                pass
             elif self.is_in_state_3(input_scl, input_sda):
-                self.half_half_scl_cycle_interval -= 1
-                if self.half_half_scl_cycle_interval == 0:
-                    if not super().is_three_fourth_iic_clock_interval_minus_one():
-                        return False
-                    # finish!
+                if super().is_end_of_three_fourths_iic_clock_interval():
                     self._is_finished = True
-                    pass
             else:
                 return False
 
@@ -307,7 +333,124 @@ class IIC_Checker():
 
         def post_update(self, input_scl, input_sda):
             return super().post_update(input_scl, input_sda)
+    
+    class Repeat_Start_Checker(Base_Checker):
+        def __init__(self):
+            super().__init__()
+            self.half_scl_cycle_interval = 0
+            self.half_half_scl_cycle_interval = 0
+            self._scl_cycle_state = 0
+            self.sda_high_count = 0
+            self._state_sig = None
+        # scl处于低电平，sda处于高电平
+        def is_in_state_1(self, input_scl, input_sda):
+            return self._scl_rising_edge_count == 0 \
+                and self._scl_falling_edge_count == 0 \
+                and input_scl == 0 \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 0 \
+                and input_sda == 1 \
+                and super().is_bus_no_change(input_scl, input_sda) \
+                and super().is_inside_one_fourth_iic_clock_interval()
+        # scl被拉高，sda保持高电平
+        def is_change_to_state_2(self, input_scl, input_sda):
+            return self._scl_rising_edge_count == 1 \
+                and self._scl_falling_edge_count == 0 \
+                and input_scl == 1 \
+                and super().is_scl_rising(input_scl) \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 0 \
+                and input_sda == 1 \
+                and super().is_sda_no_change(input_sda) \
+                and super().is_begin_of_two_fourths_iic_clock_interval()
+        # scl处于高电平，sda保持高电平
+        def is_in_state_2(self, input_scl, input_sda):
+            return self._scl_rising_edge_count == 1 \
+                and self._scl_falling_edge_count == 0 \
+                and input_scl == 1 \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 0 \
+                and input_sda == 1 \
+                and super().is_bus_no_change(input_scl, input_sda) \
+                and super().is_inside_two_fourths_iic_clock_interval()
+        # scl保持高电平，sda被拉低
+        def is_change_to_state_3(self, input_scl, input_sda):
+            return self._scl_rising_edge_count == 1 \
+                and self._scl_falling_edge_count == 0 \
+                and super().is_scl_no_change(input_scl) \
+                and input_scl == 1 \
+                and self._sda_falling_edge_count == 1 \
+                and self._sda_rising_edge_count == 0 \
+                and input_sda == 0 \
+                and super().is_sda_falling(input_sda) \
+                and super().is_begin_of_three_fourths_iic_clock_interval()
+        # scl保持高电平，sda处于低电平
+        def is_in_state_3(self, input_scl, input_sda):
+            return self._scl_rising_edge_count == 1 \
+                and self._scl_falling_edge_count == 0 \
+                and input_scl == 1 \
+                and self._sda_falling_edge_count == 1 \
+                and self._sda_rising_edge_count == 0 \
+                and input_sda == 0 \
+                and super().is_bus_no_change(input_scl, input_sda) \
+                and super().is_inside_three_fourths_iic_clock_interval()
+        # scl被拉低，sda处于低电平
+        def is_change_to_state_4(self, input_scl, input_sda):
+            return self._scl_rising_edge_count == 1 \
+                and self._scl_falling_edge_count == 1 \
+                and input_scl == 0 \
+                and super().is_scl_falling(input_scl) \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 1 \
+                and input_sda == 0 \
+                and super().is_sda_no_change(input_sda) \
+                and super().is_begin_of_four_fourths_iic_clock_interval()
+        # scl处于低电平，sda处于低电平
+        def is_in_state_4(self, input_scl, input_sda):
+            return self._scl_rising_edge_count == 1 \
+                and self._scl_falling_edge_count == 1 \
+                and input_scl == 0 \
+                and self._sda_rising_edge_count == 0 \
+                and self._sda_falling_edge_count == 1 \
+                and input_sda == 0 \
+                and self.is_bus_no_change(input_scl, input_sda) \
+                and super().is_inside_four_fourths_iic_clock_interval()
+
+        def get_state_sig(self):
+            return IIC_Checker.IIC_SIG_BIT_1
+
+        def update(self, input_scl, input_sda):
+            self.pre_update(input_scl, input_sda)
+            
+            if self.is_in_state_1(input_scl, input_sda):
+                pass
+            elif self.is_change_to_state_2(input_scl, input_sda):
+                pass
+            elif self.is_in_state_2(input_scl, input_sda):
+                pass
+            elif self.is_change_to_state_3(input_scl, input_sda):
+                pass
+            elif self.is_in_state_3(input_scl, input_sda):
+                pass
+            elif self.is_change_to_state_4(input_scl, input_sda):
+                pass
+            elif self.is_in_state_4(input_scl, input_sda):
+                if super().is_end_of_four_fourths_iic_clock_interval():
+                    self._is_finished = True
+            else:
+                return False
+
+            self.post_update(input_scl, input_sda)
+            return True
         
+        def pre_update(self, input_scl, input_sda):
+            return super().pre_update(input_scl, input_sda)
+
+        def post_update(self, input_scl, input_sda):
+            return super().post_update(input_scl, input_sda)
+
+        def get_state_sig(self):
+            return self._state_sig
 
     class Bit_Checker(Base_Checker):
         def __init__(self, expected_bit_value):
@@ -323,36 +466,36 @@ class IIC_Checker():
             return self._scl_rising_edge_count == 0 \
                 and self._scl_falling_edge_count == 0 \
                 and input_scl == 0 \
-                and self.is_scl_no_change(input_scl) \
-                and self._scl_cycle_state == 0
+                and super().is_scl_no_change(input_scl) \
+                and super().is_inside_one_fourth_iic_clock_interval
         # scl被拉高
         def is_change_to_state_2(self, input_scl):
             return self._scl_rising_edge_count == 1 \
                 and self._scl_falling_edge_count == 0 \
                 and input_scl == 1 \
-                and self.is_scl_rising(input_scl) \
-                and self._scl_cycle_state == 0
+                and super().is_scl_rising(input_scl) \
+                and super().is_begin_of_two_fourths_iic_clock_interval()
         # scl处于高电平
-        def is_in_state_2(self, input_scl, input_sda):
+        def is_in_state_2(self, input_scl):
             return self._scl_rising_edge_count == 1 \
                 and self._scl_falling_edge_count == 0 \
                 and input_scl == 1 \
-                and self.is_bus_no_change(input_scl, input_sda) \
-                and self._scl_cycle_state == 1
+                and super().is_scl_no_change(input_scl) \
+                and (super().is_inside_two_fourths_iic_clock_interval or super().is_inside_three_fourths_iic_clock_interval())
         # scl被拉低
         def is_change_to_state_3(self, input_scl):
             return self._scl_rising_edge_count == 1 \
                 and self._scl_falling_edge_count == 1 \
                 and input_scl == 0 \
-                and self.is_scl_falling(input_scl) \
-                and self._scl_cycle_state == 1
+                and super().is_scl_falling(input_scl) \
+                and super().is_begin_of_four_fourths_iic_clock_interval()
         # scl处于低电平
-        def is_in_state_3(self, input_scl, input_sda):
+        def is_in_state_3(self, input_scl):
             return self._scl_rising_edge_count == 1 \
                 and self._scl_falling_edge_count == 1 \
                 and input_scl == 0 \
-                and self.is_bus_no_change(input_scl, input_sda) \
-                and self._scl_cycle_state == 2
+                and super().is_scl_no_change(input_scl) \
+                and super().is_inside_four_fourths_iic_clock_interval()
 
         def get_state_sig(self):
             return IIC_Checker.IIC_SIG_BIT_1
@@ -363,24 +506,15 @@ class IIC_Checker():
             if self.is_in_state_1(input_scl):
                 pass
             elif self.is_change_to_state_2(input_scl):
-                if not super().is_one_fourth_iic_clock_interval():
-                    return False
-                self._scl_cycle_state = 1
                 self.sda_high_count += input_sda
                 self.half_scl_cycle_interval += 1
-            elif self.is_in_state_2(input_scl, input_sda):
+            elif self.is_in_state_2(input_scl):
                 self.sda_high_count += input_sda
                 self.half_scl_cycle_interval += 1
             elif self.is_change_to_state_3(input_scl):
-                if not super().is_three_fourth_iic_clock_interval():
-                    return False
-                self._scl_cycle_state = 2
-                self.half_half_scl_cycle_interval = self.half_scl_cycle_interval // 2 - 1
-            elif self.is_in_state_3(input_scl, input_sda):
-                self.half_half_scl_cycle_interval -= 1
-                if self.half_half_scl_cycle_interval == 0:
-                    if not super().is_one_first_iic_clock_interval_minus_one():
-                        return False
+                pass
+            elif self.is_in_state_3(input_scl):
+                if super().is_end_of_four_fourths_iic_clock_interval():
                     if self.sda_high_count / self.half_scl_cycle_interval > 0.98 and self._expected_bit_value == 1:
                         # Finished!
                         self._state_sig = IIC_Checker.IIC_SIG_BIT_1
