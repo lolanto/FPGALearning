@@ -5,8 +5,10 @@ from cocotb.triggers import FallingEdge, RisingEdge, Timer
 from cocotb.runner import get_runner
 from IICChecker import *
 
+# 提前x个时钟周期拉起完成信号
+ENABLE_SIGNAL_PRE_COMPLETED = 3
 
-ENABLE_DEBUG = True
+ENABLE_DEBUG = False
 def try_debug():
     if ENABLE_DEBUG is False:
         return
@@ -27,7 +29,7 @@ IIC_INST_STOP_TX = IIC_INST_REPEAT_START_TX + 1
 IIC_INST_RECV_BYTE = IIC_INST_STOP_TX + 1
 IIC_INST_SEND_BYTE = IIC_INST_RECV_BYTE + 1
 
-g_run_all = False
+g_run_all = True
 
 g_test_case_enable_settings = {
     'idle': False,
@@ -38,7 +40,12 @@ g_test_case_enable_settings = {
     'receive_byte': False,
     'clock_stretching_send_byte': False,
     'clock_stretching_receive_byte': False,
-    'complete_send_and_receive': True # 完整跑一遍发送和接收
+    'complete_send_and_receive': False,
+    'complete_receive_and_send': False,
+    'start_repeat_start_send_and_stop': False, # 开始信号后再发送开始信号
+    'start_receive_stop_start_send_stop': False, # 开始接收停止再开始发送最后停止
+    'start_send_send_stop': False,
+    'start_receive_receive_stop': True
 }
 
 
@@ -76,16 +83,21 @@ def check_scl_and_sda_is_using_and_not_in_high_resitance_state(dut):
     assert dut.out_sda_is_using.value == 1
     assert dut.out_scl_is_using.value == 1
 
-async def receive_signals(dut, scl_out_sigs, sda_out_sigs, timeout=5000):
+async def receive_signals(dut, scl_out_sigs, sda_out_sigs, timeout=5000, complete_callback=None):
     iter_count = 0
+    complete_sig_count_down = ENABLE_SIGNAL_PRE_COMPLETED
     while iter_count < timeout:
         await RisingEdge(dut.in_clk)
+        if complete_callback is not None and dut.out_is_completed.value == 1:
+            complete_callback()
         if dut.out_is_completed.value == 1:
-            break
+            complete_sig_count_down -= 1
         check_scl_and_sda_is_using_and_not_in_high_resitance_state(dut)
         sda_out_sigs.append(int(dut.out_sda_out.value))
         scl_out_sigs.append(int(dut.out_scl_out.value))
         iter_count += 1
+        if dut.out_is_completed.value == 1 and complete_sig_count_down == 0:
+            break
     assert iter_count < 5000
 
 
@@ -111,10 +123,11 @@ async def idle_signal(dut):
         _assert_im_idle(dut)
 
 
-async def _impl_start_signal(dut):
-    dut.in_instruction.value = IIC_INST_START_TX
-    dut.in_enable.value = 1
-    await RisingEdge(dut.in_clk)
+async def _impl_start_signal(dut, skip_cmd_setting, in_complete_callback=None):
+    if skip_cmd_setting is False:
+        dut.in_instruction.value = IIC_INST_START_TX
+        dut.in_enable.value = 1
+        await RisingEdge(dut.in_clk)
     # 一个上升沿后恢复命令
     dut.in_instruction.value = IIC_INST_UNKNOWN
     dut.in_enable.value = 0
@@ -126,7 +139,7 @@ async def _impl_start_signal(dut):
     
     sda_out_sigs = [1]
     scl_out_sigs = [1]
-    await receive_signals(dut, scl_out_sigs, sda_out_sigs)
+    await receive_signals(dut, scl_out_sigs, sda_out_sigs, complete_callback=in_complete_callback)
     
     try_to_match_iic_sigs([ IIC_Checker.Start_Checker() ], scl_out_sigs, sda_out_sigs)
 
@@ -157,7 +170,7 @@ async def start_signal(dut):
     await reset_signal(dut)
     print("Start Simulate")
     
-    await _impl_start_signal(dut)
+    await _impl_start_signal(dut, skip_cmd_setting=False)
     # 再过一个时钟上升沿，上层器件设置下一步命令
     await RisingEdge(dut.in_clk)
     # 上层器件不设置任何命令
@@ -166,10 +179,11 @@ async def start_signal(dut):
     check_end_of_sigs(dut)
 
 
-async def _impl_stop_signal(dut):
-    dut.in_instruction.value = IIC_INST_STOP_TX
-    dut.in_enable.value = 1
-    await RisingEdge(dut.in_clk)
+async def _impl_stop_signal(dut, skip_cmd_setting, in_complete_callback=None):
+    if skip_cmd_setting is False:
+        dut.in_instruction.value = IIC_INST_STOP_TX
+        dut.in_enable.value = 1
+        await RisingEdge(dut.in_clk)
     # 一个上升沿后恢复命令
     dut.in_instruction.value = IIC_INST_UNKNOWN
     dut.in_enable.value = 0
@@ -181,7 +195,7 @@ async def _impl_stop_signal(dut):
     
     sda_out_sigs = [0]
     scl_out_sigs = [0]
-    await receive_signals(dut, scl_out_sigs, sda_out_sigs)
+    await receive_signals(dut, scl_out_sigs, sda_out_sigs, complete_callback=in_complete_callback)
     
     try_to_match_iic_sigs([ IIC_Checker.Stop_Checker() ], scl_out_sigs, sda_out_sigs)
 
@@ -209,7 +223,7 @@ async def stop_signal(dut):
     await reset_signal(dut)
     print("Start Simulate")
 
-    await _impl_stop_signal(dut)
+    await _impl_stop_signal(dut, skip_cmd_setting=False)
 
     # 再过一个时钟上升沿，上层器件设置下一步命令
     await RisingEdge(dut.in_clk)
@@ -219,10 +233,11 @@ async def stop_signal(dut):
     check_end_of_sigs(dut)
 
 
-async def _impl_repeat_start(dut):
-    dut.in_instruction.value = IIC_INST_REPEAT_START_TX
-    dut.in_enable.value = 1
-    await RisingEdge(dut.in_clk)
+async def _impl_repeat_start(dut, skip_cmd_setting, in_complete_callback=None):
+    if skip_cmd_setting is False:
+        dut.in_instruction.value = IIC_INST_REPEAT_START_TX
+        dut.in_enable.value = 1
+        await RisingEdge(dut.in_clk)
     # 一个上升沿后恢复命令
     dut.in_instruction.value = IIC_INST_UNKNOWN
     dut.in_enable.value = 0
@@ -234,7 +249,7 @@ async def _impl_repeat_start(dut):
     
     sda_out_sigs = [1]
     scl_out_sigs = [0]
-    await receive_signals(dut, scl_out_sigs, sda_out_sigs)
+    await receive_signals(dut, scl_out_sigs, sda_out_sigs, complete_callback=in_complete_callback)
     
     try_to_match_iic_sigs([ IIC_Checker.Repeat_Start_Checker() ], scl_out_sigs, sda_out_sigs)
 
@@ -262,7 +277,7 @@ async def repeat_start(dut):
     await reset_signal(dut)
     print("Start Simulate")
 
-    await _impl_repeat_start(dut)
+    await _impl_repeat_start(dut, skip_cmd_setting=False)
 
     # 再过一个时钟上升沿，上层器件设置下一步命令
     await RisingEdge(dut.in_clk)
@@ -272,21 +287,22 @@ async def repeat_start(dut):
     check_end_of_sigs(dut)
 
 
-async def _impl_send_byte(dut, byte_to_send):
-    dut.in_instruction.value = IIC_INST_SEND_BYTE
-    dut.in_byte_to_send.value = byte_to_send
-    dut.in_enable.value = 1
-    await RisingEdge(dut.in_clk)
+async def _impl_send_byte(dut, byte_to_send, skip_cmd_setting, in_complete_callback=None):
+    if skip_cmd_setting is False:
+        dut.in_instruction.value = IIC_INST_SEND_BYTE
+        dut.in_byte_to_send.value = byte_to_send
+        dut.in_enable.value = 1
+        await RisingEdge(dut.in_clk)
     # 一个上升沿后恢复命令
     dut.in_instruction.value = IIC_INST_UNKNOWN
     dut.in_enable.value = 0
     await RisingEdge(dut.in_clk)
     # 指令配置之后的第一个时钟上升沿，检查scl和sda的初始状态
     check_scl_is_using_as(dut, 0)
-    check_sda_is_using_as(dut, 1)
+    check_sda_is_using_as(dut, ((byte_to_send >> 7) & 1))
     assert dut.out_is_completed.value == 0
 
-    sda_out_sigs = [1]
+    sda_out_sigs = [((byte_to_send >> 7) & 1)]
     scl_out_sigs = [0]
 
     # 发送一个字节需要8个SCL时钟周期，每个周期单独需要tick 128次，第一个周期提前进行了一次tick所以减一
@@ -299,23 +315,34 @@ async def _impl_send_byte(dut, byte_to_send):
     try_to_match_iic_sigs(bit_checkers_of_byte_to_send, scl_out_sigs, sda_out_sigs)
 
     # 开始进入ACK接收状态
-    await RisingEdge(dut.in_clk)
     dut.in_sda_in.value = 1  # 模拟ACK信号为1
     for _ in range(32):
+        await RisingEdge(dut.in_clk)
         check_scl_is_using_as(dut, 0)
         check_sda_is_in_high_resitance_state(dut)
-        await RisingEdge(dut.in_clk)
     for _ in range(64):
+        await RisingEdge(dut.in_clk)
         check_scl_is_using_as(dut, 1)
         check_sda_is_in_high_resitance_state(dut)
+    for _ in range(32 - ENABLE_SIGNAL_PRE_COMPLETED):
         await RisingEdge(dut.in_clk)
-    for _ in range(32):
         check_scl_is_using_as(dut, 0)
         check_sda_is_in_high_resitance_state(dut)
+
+    if ENABLE_SIGNAL_PRE_COMPLETED:
+        for i in range(ENABLE_SIGNAL_PRE_COMPLETED):
+            await RisingEdge(dut.in_clk)
+            # 提前拉起了完成信号
+            assert dut.out_is_completed.value == 1
+            assert dut.out_ack_read.value == 1
+            check_scl_is_using_as(dut, 0)
+            check_sda_is_in_high_resitance_state(dut)
+            if in_complete_callback is not None:
+                in_complete_callback()
+    else:
         await RisingEdge(dut.in_clk)
-    
-    assert dut.out_is_completed.value == 1
-    assert dut.out_ack_read.value == 1
+        assert dut.out_is_completed.value == 1
+        assert dut.out_ack_read.value == 1
 
 @cocotb.test(skip=not g_test_case_enable_settings['send_byte'] and not g_run_all)
 async def send_byte(dut):
@@ -329,8 +356,8 @@ async def send_byte(dut):
     await cocotb.start(c.start()) # 告诉时钟对象可以开始工作，并直接返回。此时时钟就绪，模拟器还没开始运作
     await reset_signal(dut)
     print("Start Simulate")
-    
-    await _impl_send_byte(dut, 0b11011010)
+    try_debug()
+    await _impl_send_byte(dut, 0b11011010, skip_cmd_setting=False)
 
     # 再过一个时钟上升沿，上层器件设置下一步命令
     await RisingEdge(dut.in_clk)
@@ -423,10 +450,11 @@ async def clock_stretching_send_byte(dut):
     check_end_of_sigs(dut)
 
 
-async def _impl_receive_byte(dut, byte_to_receive):
-    dut.in_instruction.value = IIC_INST_RECV_BYTE
-    dut.in_enable.value = 1
-    await RisingEdge(dut.in_clk)
+async def _impl_receive_byte(dut, byte_to_receive, skip_cmd_setting, in_complete_callback=None):
+    if skip_cmd_setting is False:
+        dut.in_instruction.value = IIC_INST_RECV_BYTE
+        dut.in_enable.value = 1
+        await RisingEdge(dut.in_clk)
     # 一个上升沿后恢复命令
     dut.in_instruction.value = IIC_INST_UNKNOWN
     dut.in_enable.value = 0
@@ -465,7 +493,7 @@ async def _impl_receive_byte(dut, byte_to_receive):
     sda_out_sigs = [1]
     scl_out_sigs = [0]
     
-    await receive_signals(dut, scl_out_sigs, sda_out_sigs)
+    await receive_signals(dut, scl_out_sigs, sda_out_sigs, complete_callback=in_complete_callback)
     assert dut.out_byte_read.value == byte_to_receive
 
     # 检查ACK输出信号
@@ -487,7 +515,7 @@ async def receive_byte(dut):
     await reset_signal(dut)
     print("Start Simulate")
 
-    await _impl_receive_byte(dut, byte_to_receive)
+    await _impl_receive_byte(dut, byte_to_receive, False)
 
     # 再过一个时钟上升沿，上层器件设置下一步命令
     await RisingEdge(dut.in_clk)
@@ -595,12 +623,325 @@ async def complete_send_and_receive(dut):
     await reset_signal(dut)
     print("Start Simulate")
 
-    await _impl_start_signal(dut)
-    await _impl_send_byte(dut, byte_to_send)
-    await _impl_stop_signal(dut)
+    start_complete_callback_state = 0
+    def start_complete_callback():
+        nonlocal dut
+        nonlocal byte_to_send
+        nonlocal start_complete_callback_state
+        if start_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_SEND_BYTE
+            dut.in_byte_to_send.value = byte_to_send
+        start_complete_callback_state += 1
+
+    await _impl_start_signal(dut, skip_cmd_setting=False, in_complete_callback=start_complete_callback)
+
+    send_byte_complete_callback_state = 0
+    def send_byte_complete_callback():
+        nonlocal dut
+        nonlocal send_byte_complete_callback_state
+        if send_byte_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_RECV_BYTE
+        send_byte_complete_callback_state += 1
+
+    await _impl_send_byte(dut, byte_to_send, skip_cmd_setting=True, in_complete_callback=send_byte_complete_callback)
+
+    recv_byte_complete_callback_state = 0
+    def recv_byte_complete_callback():
+        nonlocal dut
+        nonlocal recv_byte_complete_callback_state
+        if recv_byte_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_STOP_TX
+        recv_byte_complete_callback_state += 1
+
+    await _impl_receive_byte(dut, byte_to_receive, skip_cmd_setting=True, in_complete_callback=recv_byte_complete_callback)
+
+    await _impl_stop_signal(dut, skip_cmd_setting=True)
 
     await RisingEdge(dut.in_clk)
     check_end_of_sigs(dut)
+
+@cocotb.test(skip=not g_test_case_enable_settings['complete_receive_and_send'] and not g_run_all)
+async def complete_receive_and_send(dut):
+    '''
+    测试用例：完整地进行一次发送和接收字节流程，包括发送开始和结束信号
+    '''
+    byte_to_send = 0b11000101
+    byte_to_receive = 0b10011010
+    # try_debug()
+    # 创建一个时钟对象，驱动in_clk输入信号，每2ns为一个周期
+    c = Clock(dut.in_clk, 2, units='ns')
+    await cocotb.start(c.start()) # 告诉时钟对象可以开始工作，并直接返回。此时时钟就绪，模拟器还没开始运作
+    await reset_signal(dut)
+    print("Start Simulate")
+
+    start_complete_callback_state = 0
+    def start_complete_callback():
+        nonlocal dut
+        nonlocal byte_to_send
+        nonlocal start_complete_callback_state
+        if start_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_RECV_BYTE
+        start_complete_callback_state += 1
+
+    await _impl_start_signal(dut, skip_cmd_setting=False, in_complete_callback=start_complete_callback)
+
+
+    recv_byte_complete_callback_state = 0
+    def recv_byte_complete_callback():
+        nonlocal dut
+        nonlocal recv_byte_complete_callback_state
+        if recv_byte_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_SEND_BYTE
+            dut.in_byte_to_send.value = byte_to_send
+        recv_byte_complete_callback_state += 1
+
+    await _impl_receive_byte(dut, byte_to_receive, skip_cmd_setting=True, in_complete_callback=recv_byte_complete_callback)
+
+    send_byte_complete_callback_state = 0
+    def send_byte_complete_callback():
+        nonlocal dut
+        nonlocal send_byte_complete_callback_state
+        if send_byte_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_STOP_TX
+        send_byte_complete_callback_state += 1
+    await _impl_send_byte(dut, byte_to_send, skip_cmd_setting=True, in_complete_callback=send_byte_complete_callback)
+
+    await _impl_stop_signal(dut, skip_cmd_setting=True)
+
+    await RisingEdge(dut.in_clk)
+    check_end_of_sigs(dut)
+
+@cocotb.test(skip=not g_test_case_enable_settings['start_repeat_start_send_and_stop'] and not g_run_all)
+async def start_repeat_start_send_and_stop(dut):
+
+    byte_to_send = 0b11000101
+    c = Clock(dut.in_clk, 2, units='ns')
+    await cocotb.start(c.start()) # 告诉时钟对象可以开始工作，并直接返回。此时时钟就绪，模拟器还没开始运作
+    await reset_signal(dut)
+    print("Start Simulate")
+
+    start_complete_callback_state = 0
+    def start_complete_callback():
+        nonlocal dut
+        nonlocal start_complete_callback_state
+        if start_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_REPEAT_START_TX
+        start_complete_callback_state += 1
+
+    await _impl_start_signal(dut, skip_cmd_setting=False, in_complete_callback=start_complete_callback)
+    
+    repeat_start_complete_callback_state = 0
+    def repeat_start_complete_callback():
+        nonlocal dut
+        nonlocal byte_to_send
+        nonlocal repeat_start_complete_callback_state
+        if repeat_start_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_SEND_BYTE
+            dut.in_byte_to_send.value = byte_to_send
+        repeat_start_complete_callback_state += 1
+
+    await _impl_repeat_start(dut, skip_cmd_setting=True, in_complete_callback=repeat_start_complete_callback)
+
+    send_byte_complete_callback_state = 0
+    def send_byte_complete_callback():
+        nonlocal dut
+        nonlocal send_byte_complete_callback_state
+        if send_byte_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_STOP_TX
+        send_byte_complete_callback_state += 1
+
+    await _impl_send_byte(dut, byte_to_send, skip_cmd_setting=True, in_complete_callback=send_byte_complete_callback)
+
+    await _impl_stop_signal(dut, skip_cmd_setting=True)
+
+    await RisingEdge(dut.in_clk)
+    check_end_of_sigs(dut)
+
+
+@cocotb.test(skip=not g_test_case_enable_settings['start_receive_stop_start_send_stop'] and not g_run_all)
+async def start_receive_stop_start_send_stop(dut):
+
+    byte_to_send = 0b11000101
+    byte_to_receive = 0b10011010
+    c = Clock(dut.in_clk, 2, units='ns')
+    await cocotb.start(c.start()) # 告诉时钟对象可以开始工作，并直接返回。此时时钟就绪，模拟器还没开始运作
+    await reset_signal(dut)
+    print("Start Simulate")
+
+    start_complete_callback_state = 0
+    def start_complete_callback():
+        nonlocal dut
+        nonlocal start_complete_callback_state
+        if start_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_RECV_BYTE
+        start_complete_callback_state += 1
+
+    await _impl_start_signal(dut, skip_cmd_setting=False, in_complete_callback=start_complete_callback)
+
+    recv_byte_complete_callback_state = 0
+    def recv_byte_complete_callback():
+        nonlocal dut
+        nonlocal recv_byte_complete_callback_state
+        if recv_byte_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_STOP_TX
+        recv_byte_complete_callback_state += 1
+
+    await _impl_receive_byte(dut, byte_to_receive, skip_cmd_setting=True, in_complete_callback=recv_byte_complete_callback)
+
+    stop_complete_callback_state = 0
+    def stop_complete_callback():
+        nonlocal dut
+        nonlocal stop_complete_callback_state
+        if stop_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_START_TX
+        stop_complete_callback_state += 1
+
+    await _impl_stop_signal(dut, skip_cmd_setting=True, in_complete_callback=stop_complete_callback)
+
+    start_complete_callback_state_2 = 0
+    def start_complete_callback_2():
+        nonlocal dut
+        nonlocal byte_to_send
+        nonlocal start_complete_callback_state_2
+        if start_complete_callback_state_2 == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_SEND_BYTE
+            dut.in_byte_to_send = byte_to_send
+        start_complete_callback_state_2 += 1
+
+    await _impl_start_signal(dut, skip_cmd_setting=True, in_complete_callback=start_complete_callback_2)
+
+    send_byte_complete_callback_state = 0
+    def send_byte_complete_callback():
+        nonlocal dut
+        nonlocal send_byte_complete_callback_state
+        if send_byte_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_STOP_TX
+        send_byte_complete_callback_state += 1
+    await _impl_send_byte(dut, byte_to_send, skip_cmd_setting=True, in_complete_callback=send_byte_complete_callback)
+
+    await _impl_stop_signal(dut, skip_cmd_setting=True)
+
+
+@cocotb.test(skip=not g_test_case_enable_settings['start_send_send_stop'] and not g_run_all)
+async def start_send_send_stop(dut):
+    '''
+    测试用例：完整地进行一次发送和接收字节流程，包括发送开始和结束信号
+    '''
+    byte_to_send = 0b11000101
+    # try_debug()
+    # 创建一个时钟对象，驱动in_clk输入信号，每2ns为一个周期
+    c = Clock(dut.in_clk, 2, units='ns')
+    await cocotb.start(c.start()) # 告诉时钟对象可以开始工作，并直接返回。此时时钟就绪，模拟器还没开始运作
+    await reset_signal(dut)
+    print("Start Simulate")
+
+    start_complete_callback_state = 0
+    def start_complete_callback():
+        nonlocal dut
+        nonlocal byte_to_send
+        nonlocal start_complete_callback_state
+        if start_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_SEND_BYTE
+            dut.in_byte_to_send = byte_to_send
+        start_complete_callback_state += 1
+
+    await _impl_start_signal(dut, skip_cmd_setting=False, in_complete_callback=start_complete_callback)
+
+    send_byte_complete_callback_state = 0
+    def send_byte_complete_callback():
+        nonlocal dut
+        nonlocal byte_to_send
+        nonlocal send_byte_complete_callback_state
+        if send_byte_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_SEND_BYTE
+            dut.in_byte_to_send = byte_to_send
+        send_byte_complete_callback_state += 1
+    await _impl_send_byte(dut, byte_to_send, skip_cmd_setting=True, in_complete_callback=send_byte_complete_callback)
+
+    send_byte_complete_callback_state_2 = 0
+    def send_byte_complete_callback_2():
+        nonlocal dut
+        nonlocal send_byte_complete_callback_state_2
+        if send_byte_complete_callback_state_2 == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_STOP_TX
+        send_byte_complete_callback_state_2 += 1
+    await _impl_send_byte(dut, byte_to_send, skip_cmd_setting=True, in_complete_callback=send_byte_complete_callback_2)
+
+    await _impl_stop_signal(dut, skip_cmd_setting=True)
+
+    await RisingEdge(dut.in_clk)
+    check_end_of_sigs(dut)
+
+
+@cocotb.test(skip=not g_test_case_enable_settings['start_receive_receive_stop'] and not g_run_all)
+async def start_receive_receive_stop(dut):
+    '''
+    测试用例：完整地进行一次发送和接收字节流程，包括发送开始和结束信号
+    '''
+    byte_to_receive = 0b10011010
+    # try_debug()
+    # 创建一个时钟对象，驱动in_clk输入信号，每2ns为一个周期
+    c = Clock(dut.in_clk, 2, units='ns')
+    await cocotb.start(c.start()) # 告诉时钟对象可以开始工作，并直接返回。此时时钟就绪，模拟器还没开始运作
+    await reset_signal(dut)
+    print("Start Simulate")
+
+    start_complete_callback_state = 0
+    def start_complete_callback():
+        nonlocal dut
+        nonlocal start_complete_callback_state
+        if start_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_RECV_BYTE
+        start_complete_callback_state += 1
+
+    await _impl_start_signal(dut, skip_cmd_setting=False, in_complete_callback=start_complete_callback)
+
+
+    recv_byte_complete_callback_state = 0
+    def recv_byte_complete_callback():
+        nonlocal dut
+        nonlocal recv_byte_complete_callback_state
+        if recv_byte_complete_callback_state == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_RECV_BYTE
+        recv_byte_complete_callback_state += 1
+
+    await _impl_receive_byte(dut, byte_to_receive, skip_cmd_setting=True, in_complete_callback=recv_byte_complete_callback)
+
+    recv_byte_complete_callback_state_2 = 0
+    def recv_byte_complete_callback_2():
+        nonlocal dut
+        nonlocal recv_byte_complete_callback_state_2
+        if recv_byte_complete_callback_state_2 == 0:
+            dut.in_enable.value = 1
+            dut.in_instruction.value = IIC_INST_STOP_TX
+        recv_byte_complete_callback_state_2 += 1
+
+    await _impl_receive_byte(dut, byte_to_receive, skip_cmd_setting=True, in_complete_callback=recv_byte_complete_callback_2)
+
+    await _impl_stop_signal(dut, skip_cmd_setting=True)
+
+    await RisingEdge(dut.in_clk)
+    check_end_of_sigs(dut)
+
 
 def main():
     proj_path = os.path.dirname(os.path.abspath(__file__))

@@ -17,6 +17,8 @@
  * @return out_sda_is_using sda总线是否正在被该器件使用
  * @return out_scl_is_using scl总线是否正在被该器件使用
  * @return out_is_completed 当前指令是否执行完成
+ * @return out_is_working 当前器件是否正在工作
+ * @return out_is_clock_stretching 当前是否处在时钟拉伸状态
  * @note:
  * 使用方式：
  * 外部使能，然后设置指令；不断等待当前设备的completed标记置1
@@ -38,12 +40,26 @@
 `define IIC_INST_RECV_BYTE `IIC_INST_STOP_TX + 1 //< 接收一个字节信息，并返回ACK信号
 `define IIC_INST_SEND_BYTE `IIC_INST_RECV_BYTE + 1 //< 发送一个字节信息，并等待ACK信号
 
+// Note: 各种"准备"状态存在的意义是对接下来的指令执行进行初始化，其存在的目的
+// 是为了在进行连续指令执行时，可以绕过Complete -> Idle -> command的延迟
+// 所有的"准备"状态，都只会存在一个Tick
 `define IIC_STATE_IDLE 0
-`define IIC_STATE_SENDING_START `IIC_STATE_IDLE + 1 //< 正在发送开始信号
-`define IIC_STATE_SENDING_REPEAT_START `IIC_STATE_SENDING_START + 1 //< 正在发送重复开始信号
-`define IIC_STATE_SENDING_STOP `IIC_STATE_SENDING_REPEAT_START + 1 //< 正在发送结束信号
-`define IIC_STATE_SENDING_BYTE `IIC_STATE_SENDING_STOP + 1 //< 正在发送字节信息
-`define IIC_STATE_RECVING_BYTE `IIC_STATE_SENDING_BYTE + 1 //< 正在接收字节信息
+
+`define IIC_STATE_PRE_SEND_START `IIC_STATE_IDLE + 1 //< 准备发送开始信号
+`define IIC_STATE_SENDING_START `IIC_STATE_PRE_SEND_START + 1 //< 正在发送开始信号
+
+`define IIC_STATE_PRE_SEND_REPEAT_START `IIC_STATE_SENDING_START + 1 //< 准备发送重复开始信号
+`define IIC_STATE_SENDING_REPEAT_START `IIC_STATE_PRE_SEND_REPEAT_START + 1 //< 正在发送重复开始信号
+
+`define IIC_STATE_PRE_SEND_STOP `IIC_STATE_SENDING_REPEAT_START + 1 //< 准备发送结束信号
+`define IIC_STATE_SENDING_STOP `IIC_STATE_PRE_SEND_STOP + 1 //< 正在发送结束信号
+
+`define IIC_STATE_PRE_SEND_BYTE `IIC_STATE_SENDING_STOP + 1 //< 准备发送字节信息
+`define IIC_STATE_SENDING_BYTE `IIC_STATE_PRE_SEND_BYTE + 1 //< 正在发送字节信息
+
+`define IIC_STATE_PRE_RECV_BYTE `IIC_STATE_SENDING_BYTE + 1 //< 准备接收字节信息
+`define IIC_STATE_RECVING_BYTE `IIC_STATE_PRE_RECV_BYTE + 1 //< 正在接收字节信息
+
 `define IIC_STATE_SENDING_ACK `IIC_STATE_RECVING_BYTE + 1 //< 正在发送ACK信号
 `define IIC_STATE_RECVING_ACK `IIC_STATE_SENDING_ACK + 1 //< 正在接收ACK信号
 `define IIC_STATE_COMPLETE `IIC_STATE_RECVING_ACK + 1 //< 当前指令已经完成
@@ -134,58 +150,97 @@ module IIC_Master(
     end
 /**************************************************************************************/
 /**********************状态转移判断逻辑*************************************************/
+    function [3:0] f_get_next_state_according_to_instruction;
+        input _f_in_enable;
+        input [2:0] _f_in_instruction;
+    begin
+        if (_f_in_enable && _f_in_instruction != `IIC_INST_UNKNOWN) begin
+            case (_f_in_instruction)
+                `IIC_INST_START_TX: begin
+                    f_get_next_state_according_to_instruction = `IIC_STATE_PRE_SEND_START;
+                end
+                `IIC_INST_REPEAT_START_TX: begin
+                    f_get_next_state_according_to_instruction = `IIC_STATE_PRE_SEND_REPEAT_START;
+                end
+                `IIC_INST_STOP_TX: begin
+                    f_get_next_state_according_to_instruction = `IIC_STATE_PRE_SEND_STOP;
+                end
+                `IIC_INST_RECV_BYTE: begin
+                    f_get_next_state_according_to_instruction = `IIC_STATE_PRE_RECV_BYTE;
+                end
+                `IIC_INST_SEND_BYTE: begin
+                    f_get_next_state_according_to_instruction = `IIC_STATE_PRE_SEND_BYTE;
+                end
+                default: begin
+                    f_get_next_state_according_to_instruction = `IIC_STATE_IDLE; // 未知指令，回到空闲状态
+                end
+            endcase
+        end
+        else begin
+            f_get_next_state_according_to_instruction = `IIC_STATE_IDLE;
+        end
+    end
+    endfunction
+
     always @(*) begin
         case (_r_state)
         `IIC_STATE_IDLE: begin
-            if (in_enable && in_instruction != `IIC_INST_UNKNOWN) begin
-                case (in_instruction)
-                    `IIC_INST_START_TX: begin
-                        _r_next_state = `IIC_STATE_SENDING_START;
-                    end
-                    `IIC_INST_REPEAT_START_TX: begin
-                        _r_next_state = `IIC_STATE_SENDING_REPEAT_START;
-                    end
-                    `IIC_INST_STOP_TX: begin
-                        _r_next_state = `IIC_STATE_SENDING_STOP;
-                    end
-                    `IIC_INST_RECV_BYTE: begin
-                        _r_next_state = `IIC_STATE_RECVING_BYTE;
-                    end
-                    `IIC_INST_SEND_BYTE: begin
-                        _r_next_state = `IIC_STATE_SENDING_BYTE;
-                    end
-                    default: begin
-                        _r_next_state = `IIC_STATE_IDLE; // 未知指令，回到空闲状态
-                    end
-                endcase
-            end
-            else begin
-                _r_next_state = `IIC_STATE_IDLE;
-            end
+            _r_next_state = f_get_next_state_according_to_instruction(in_enable, in_instruction);
+        end
+        // Start
+        `IIC_STATE_PRE_SEND_START: begin
+            _r_next_state = `IIC_STATE_SENDING_START;
         end
         `IIC_STATE_SENDING_START: begin
             if (_r_clock_Divider == 7'b11_00000) begin
-                _r_next_state = `IIC_STATE_COMPLETE; // 发送完成，进入完成状态
+                if (in_enable && in_instruction) begin
+                    _r_next_state = f_get_next_state_according_to_instruction(in_enable, in_instruction);
+                end
+                else begin
+                    _r_next_state = `IIC_STATE_COMPLETE; // 发送完成，进入完成状态
+                end
             end
             else begin
                 _r_next_state = `IIC_STATE_SENDING_START; // 保持当前状态，直到发送完成
             end
         end
+        // Repeat Start
+        `IIC_STATE_PRE_SEND_REPEAT_START: begin
+            _r_next_state = `IIC_STATE_SENDING_REPEAT_START;
+        end
         `IIC_STATE_SENDING_REPEAT_START: begin
             if (_r_clock_Divider == 7'b00_00000) begin
-                _r_next_state = `IIC_STATE_COMPLETE; // 发送完成，进入完成状态
+                if (in_enable && in_instruction) begin
+                    _r_next_state = f_get_next_state_according_to_instruction(in_enable, in_instruction);
+                end
+                else begin
+                    _r_next_state = `IIC_STATE_COMPLETE; // 发送完成，进入完成状态
+                end
             end
             else begin
                 _r_next_state = `IIC_STATE_SENDING_REPEAT_START; // 保持当前状态，直到发送完成
             end
         end
+        // Stop
+        `IIC_STATE_PRE_SEND_STOP: begin
+            _r_next_state = `IIC_STATE_SENDING_STOP;
+        end
         `IIC_STATE_SENDING_STOP: begin
-            if (_r_clock_Divider == 7'b10_11111) begin
-                _r_next_state = `IIC_STATE_COMPLETE; // 发送完成，进入完成状态
+            if (_r_clock_Divider == 7'b11_00000) begin
+                if (in_enable && in_instruction) begin
+                    _r_next_state = f_get_next_state_according_to_instruction(in_enable, in_instruction);
+                end
+                else begin
+                    _r_next_state = `IIC_STATE_COMPLETE; // 发送完成，进入完成状态
+                end
             end
             else begin
                 _r_next_state = `IIC_STATE_SENDING_STOP; // 保持当前状态，直到发送完成
             end
+        end
+        // Send Byte
+        `IIC_STATE_PRE_SEND_BYTE: begin
+            _r_next_state = `IIC_STATE_SENDING_BYTE;
         end
         `IIC_STATE_SENDING_BYTE: begin
             if (_r_clock_Divider == 7'b00_00000 && _r_bit_index_to_process == 4'b1_111) begin
@@ -195,6 +250,10 @@ module IIC_Master(
                 _r_next_state = `IIC_STATE_SENDING_BYTE; // 保持当前状态，直到发送完成
             end
         end
+        // Recv Byte
+        `IIC_STATE_PRE_RECV_BYTE: begin
+            _r_next_state = `IIC_STATE_RECVING_BYTE;
+        end
         `IIC_STATE_RECVING_BYTE: begin
             if (_r_clock_Divider == 7'b00_00000 && _r_bit_index_to_process == 4'b1_111) begin
                 _r_next_state = `IIC_STATE_SENDING_ACK; // 接收完一个字节，进入发送ACK状态
@@ -203,17 +262,29 @@ module IIC_Master(
                 _r_next_state = `IIC_STATE_RECVING_BYTE; // 保持当前状态，直到接收完成
             end
         end
+        // Recv Ack
         `IIC_STATE_RECVING_ACK: begin
             if (_r_clock_Divider == 7'b00_00000) begin
-                _r_next_state = `IIC_STATE_COMPLETE; // 接收ACK完成，进入完成状态
+                if (in_enable && in_instruction) begin
+                    _r_next_state = f_get_next_state_according_to_instruction(in_enable, in_instruction);
+                end
+                else begin
+                    _r_next_state = `IIC_STATE_COMPLETE; // 接收ACK完成，进入完成状态
+                end
             end
             else begin
                 _r_next_state = `IIC_STATE_RECVING_ACK; // 保持当前状态，直到接收完成
             end
         end
+        // Send Ack
         `IIC_STATE_SENDING_ACK: begin
             if (_r_clock_Divider == 7'b00_00000) begin
-                _r_next_state = `IIC_STATE_COMPLETE; // 发送ACK完成，进入完成状态
+                if (in_enable && in_instruction) begin
+                    _r_next_state = f_get_next_state_according_to_instruction(in_enable, in_instruction);
+                end
+                else begin
+                    _r_next_state = `IIC_STATE_COMPLETE; // 发送ACK完成，进入完成状态
+                end
             end
             else begin
                 _r_next_state = `IIC_STATE_SENDING_ACK; // 保持当前状态，直到发送完成
@@ -275,6 +346,16 @@ module IIC_Master(
             *       64~95: 将scl总线拉低，表示开始传输
             *       一旦发送完成，将进入完成状态
 ------------------------------------------------------------------------------------*/
+            `IIC_STATE_PRE_SEND_START: begin
+                _r_is_working <= 1'b1; // 模块正在工作
+                _r_is_completed <= 1'b0;
+                _r_clock_Divider <= 7'd1;
+                _r_scl_is_using <= 1'b1; // scl总线正在被使用
+                _r_sda_is_using <= 1'b1; // sda总线正在被使用
+                /// 最初阶段，将scl和sda总线都拉高，其实是在还原初始状态
+                _r_scl_out <= 1;
+                _r_sda_out <= 1;
+            end
             `IIC_STATE_SENDING_START: begin
                 _r_is_working <= 1'b1; // 模块正在工作
                 _r_clock_Divider <= _r_clock_Divider + 7'd1;
@@ -290,6 +371,13 @@ module IIC_Master(
                 else if (_r_clock_Divider[6:5] == 2'b10) begin /// 第三阶段，将scl总线拉低
                     _r_scl_out <= 0;
                 end
+                // 提前拉起completed信号，这样上层有机会响应
+                if (_r_clock_Divider[6:0] >= 7'b11_00000 - 7'd3) begin
+                    _r_is_completed <= 1'b1;
+                end
+                else begin
+                    _r_is_completed <= 1'b0;
+                end
             end
 /*------------------------------------------------------------------------------------
             * @brief 发送重复开始信号状态
@@ -302,6 +390,15 @@ module IIC_Master(
             *       96~127: 将scl总线拉低，表示开始传输
             *       一旦发送完成，将进入完成状态
 ------------------------------------------------------------------------------------*/
+            `IIC_STATE_PRE_SEND_REPEAT_START: begin
+                _r_is_working <= 1'b1; // 模块正在工作
+                _r_is_completed <= 1'b0;
+                _r_clock_Divider <= 7'd1;
+                _r_scl_is_using <= 1'b1; // scl总线正在被使用
+                _r_sda_is_using <= 1'b1; // sda总线正在被使用
+                _r_scl_out <= 0;
+                _r_sda_out <= 1;
+            end
             `IIC_STATE_SENDING_REPEAT_START: begin
                 _r_is_working <= 1'b1; // 模块正在工作
                 _r_clock_Divider <= _r_clock_Divider + 7'd1;
@@ -323,6 +420,14 @@ module IIC_Master(
                     _r_scl_out <= 0;
                     _r_sda_out <= 0;
                 end
+
+                // 提前拉起completed信号，这样上层有机会响应
+                if (_r_clock_Divider[6:0] >= 7'b00_00000 - 7'd3) begin
+                    _r_is_completed <= 1'b1;
+                end
+                else begin
+                    _r_is_completed <= 1'b0;
+                end
             end
 /*------------------------------------------------------------------------------------
             * @brief 发送结束信号
@@ -334,6 +439,16 @@ module IIC_Master(
             *       64~95: 将sda总线拉高
             *       一旦发送完成，将进入完成状态
 ------------------------------------------------------------------------------------*/
+            `IIC_STATE_PRE_SEND_STOP: begin
+                _r_is_working <= 1'b1; // 模块正在工作
+                _r_is_completed <= 1'b0;
+                _r_clock_Divider <= 7'd1;
+                _r_scl_is_using <= 1'b1; // scl总线正在被使用
+                _r_sda_is_using <= 1'b1; // sda总线正在被使用
+                /// 最初阶段，将scl和sda总线拉低
+                _r_scl_out <= 0;
+                _r_sda_out <= 0;
+            end
             `IIC_STATE_SENDING_STOP: begin
                 _r_is_working <= 1'b1; // 模块正在工作
                 _r_clock_Divider <= _r_clock_Divider + 7'd1;
@@ -349,6 +464,14 @@ module IIC_Master(
                 else if (_r_clock_Divider[6:5] == 2'b10) begin /// 第三阶段，将sda总线也拉高
                     _r_sda_out <= 1;
                 end
+
+                // 提前拉起completed信号，这样上层有机会响应
+                if (_r_clock_Divider[6:0] >= 7'b11_00000 - 7'd3) begin
+                    _r_is_completed <= 1'b1;
+                end
+                else begin
+                    _r_is_completed <= 1'b0;
+                end
             end
 /*------------------------------------------------------------------------------------
             * @brief 发送字节状态
@@ -362,14 +485,20 @@ module IIC_Master(
             *       一旦接收完成，将进入接受ACK状态
             * @note 一旦遇到Clock Stretching，则计时器会重置，重新开始从MSB开始发送字节
 ------------------------------------------------------------------------------------*/
+            `IIC_STATE_PRE_SEND_BYTE: begin
+                _r_is_working <= 1'b1; // 模块正在工作
+                _r_is_completed <= 1'b0;
+                _r_clock_Divider <= 7'd1;
+                _r_scl_is_using <= 1'b1; // scl总线正在被使用
+                _r_sda_is_using <= 1'b1; // sda总线正在被使用
+
+                _r_byte_to_process <= in_byte_to_send; // 记录要发送的字节
+                _r_bit_index_to_process <= 4'b0_111; // 重置bit索引
+                _r_sda_out <= in_byte_to_send[7]; // 将要发送的bit输出到sda总线上
+                _r_scl_out <= 0;
+            end
             `IIC_STATE_SENDING_BYTE: begin
-                if (in_enable) begin
-                    _r_byte_to_process <= in_byte_to_send; // 记录要发送的字节
-                    _r_sda_out <= in_byte_to_send[7]; // 将要发送的bit输出到sda总线上
-                end
-                else begin
-                    _r_sda_out <= _r_byte_to_process[_r_bit_index_to_process]; // 将要发送的bit输出到sda总线上
-                end
+                _r_sda_out <= _r_byte_to_process[_r_bit_index_to_process]; // 将要发送的bit输出到sda总线上
                 _r_is_working <= 1'b1; // 模块正在工作
                 _r_scl_is_using <= 1'b1; // scl总线正在被使用
                 _r_sda_is_using <= 1'b1; // sda总线正在被使用
@@ -407,6 +536,17 @@ module IIC_Master(
             *       意思是整个scl高电平期间，至少有一半的信号是高电平，才表示接收了1，否则是0
             *       一旦接收完成，将进入发送ACK状态
 ------------------------------------------------------------------------------------*/
+            `IIC_STATE_PRE_RECV_BYTE: begin
+                _r_is_working <= 1'b1; // 模块正在工作
+                _r_is_completed <= 1'b0;
+                _r_scl_is_using <= 1'b1; // scl总线正在被使用
+                _r_sda_is_using <= 1'b0; // sda总线释放
+                _r_clock_Divider <= 7'd1;
+
+                _r_bit_index_to_process <= 4'b0_111;
+                _r_received_sig_counter <= 6'd0;
+                _r_scl_out <= 1'b0;
+            end
             `IIC_STATE_RECVING_BYTE: begin
                 _r_scl_is_using <= 1'b1; // scl总线正在被使用
                 _r_sda_is_using <= 1'b0; // sda总线释放
@@ -480,9 +620,15 @@ module IIC_Master(
                     _r_scl_out <= 0;
                 end
 
-                if (_r_clock_Divider == 7'b11_11111) begin
+                // 提前拉起completed信号，这样上层有机会响应
+                if (_r_clock_Divider[6:0] >= 7'b00_00000 - 7'd3) begin
+                    _r_is_completed <= 1'b1;
                     _r_ack_read <= _r_received_sig_counter[5]; // 根据接收到的信号判断ACK状态
                 end
+                else begin
+                    _r_is_completed <= 1'b0;
+                end
+
             end
 /*------------------------------------------------------------------------------------
             * @brief 发送ACK状态
@@ -510,6 +656,14 @@ module IIC_Master(
                 else if (_r_clock_Divider[6 : 5] == 2'b11) begin /// 最后拉低时钟，说明这个bit发送完成
                     _r_scl_out <= 0;
                 end
+
+                // 提前拉起completed信号，这样上层有机会响应
+                if (_r_clock_Divider[6:0] >= 7'b00_00000 - 7'd3) begin
+                    _r_is_completed <= 1'b1;
+                end
+                else begin
+                    _r_is_completed <= 1'b0;
+                end
             end
 /*------------------------------------------------------------------------------------
             * @brief 完成状态
@@ -522,6 +676,7 @@ module IIC_Master(
                 _r_is_working <= 1'b0; // 完成后，工作状态置为0
                 _r_scl_is_using <= 1'b0; // scl总线不再被使用
                 _r_sda_is_using <= 1'b0; // sda总线不再被使用
+                _r_clock_Divider <= 7'd0;
             end
             endcase
         end
