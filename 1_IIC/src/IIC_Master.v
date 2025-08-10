@@ -64,6 +64,7 @@
 `define IIC_STATE_RECVING_ACK `IIC_STATE_SENDING_ACK + 1 //< 正在接收ACK信号
 `define IIC_STATE_COMPLETE `IIC_STATE_RECVING_ACK + 1 //< 当前指令已经完成
 
+`define IIC_PRE_COMPLETE_SIGNAL 7'd3
 
 module IIC_Master(
     input wire in_clk,
@@ -325,7 +326,7 @@ module IIC_Master(
             t_init_working_vars();
         end
         else begin
-            case (_r_next_state)
+            case (_r_next_state) // TODO：或许可以将这部分带逻辑更新的行为放到state更新的循环里？这样这里也可以改成组合逻辑
 /*------------------------------------------------------------------------------------
             * @brief 空闲状态，等待外部使能和指令
             * @note 在此状态下，模块会等待外部的使能信号和指令输入
@@ -372,7 +373,7 @@ module IIC_Master(
                     _r_scl_out <= 0;
                 end
                 // 提前拉起completed信号，这样上层有机会响应
-                if (_r_clock_Divider[6:0] >= 7'b11_00000 - 7'd3) begin
+                if (_r_clock_Divider[6:0] >= 7'b11_00000 - `IIC_PRE_COMPLETE_SIGNAL) begin
                     _r_is_completed <= 1'b1;
                 end
                 else begin
@@ -422,7 +423,7 @@ module IIC_Master(
                 end
 
                 // 提前拉起completed信号，这样上层有机会响应
-                if (_r_clock_Divider[6:0] >= 7'b00_00000 - 7'd3) begin
+                if (_r_clock_Divider[6:0] >= 7'b00_00000 - `IIC_PRE_COMPLETE_SIGNAL) begin
                     _r_is_completed <= 1'b1;
                 end
                 else begin
@@ -466,7 +467,7 @@ module IIC_Master(
                 end
 
                 // 提前拉起completed信号，这样上层有机会响应
-                if (_r_clock_Divider[6:0] >= 7'b11_00000 - 7'd3) begin
+                if (_r_clock_Divider[6:0] >= 7'b11_00000 - `IIC_PRE_COMPLETE_SIGNAL) begin
                     _r_is_completed <= 1'b1;
                 end
                 else begin
@@ -621,7 +622,7 @@ module IIC_Master(
                 end
 
                 // 提前拉起completed信号，这样上层有机会响应
-                if (_r_clock_Divider[6:0] >= 7'b00_00000 - 7'd3) begin
+                if (_r_clock_Divider[6:0] >= 7'b00_00000 - `IIC_PRE_COMPLETE_SIGNAL) begin
                     _r_is_completed <= 1'b1;
                     _r_ack_read <= _r_received_sig_counter[5]; // 根据接收到的信号判断ACK状态
                 end
@@ -645,7 +646,7 @@ module IIC_Master(
                 _r_sda_is_using <= 1'b1; // sda总线释放
                 _r_is_working <= 1'b1; // 模块正在工作
                 _r_clock_Divider <= _r_clock_Divider + 7'd1;
-                _r_sda_out <= 1'b1;
+                _r_sda_out <= 1'b0; // ACK信号成功接收，会拉低sda总线!
                 /// 在整个发送过程中，其实sda的数据已经“建立”好了，所以下面各阶段并没有操作sda
                 if (_r_clock_Divider[6 : 5] == 2'b00) begin /// 一阶段先拉低时钟
                     _r_scl_out <= 0;
@@ -658,7 +659,7 @@ module IIC_Master(
                 end
 
                 // 提前拉起completed信号，这样上层有机会响应
-                if (_r_clock_Divider[6:0] >= 7'b00_00000 - 7'd3) begin
+                if (_r_clock_Divider[6:0] >= 7'b00_00000 - `IIC_PRE_COMPLETE_SIGNAL) begin
                     _r_is_completed <= 1'b1;
                 end
                 else begin

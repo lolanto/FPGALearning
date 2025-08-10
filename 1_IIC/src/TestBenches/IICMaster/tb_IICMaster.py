@@ -29,7 +29,7 @@ IIC_INST_STOP_TX = IIC_INST_REPEAT_START_TX + 1
 IIC_INST_RECV_BYTE = IIC_INST_STOP_TX + 1
 IIC_INST_SEND_BYTE = IIC_INST_RECV_BYTE + 1
 
-g_run_all = True
+g_run_all = False
 
 g_test_case_enable_settings = {
     'idle': False,
@@ -44,8 +44,8 @@ g_test_case_enable_settings = {
     'complete_receive_and_send': False,
     'start_repeat_start_send_and_stop': False, # 开始信号后再发送开始信号
     'start_receive_stop_start_send_stop': False, # 开始接收停止再开始发送最后停止
-    'start_send_send_stop': False,
-    'start_receive_receive_stop': True
+    'start_send_send_stop': True,
+    'start_receive_receive_stop': False
 }
 
 

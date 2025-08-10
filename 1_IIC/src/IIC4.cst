@@ -5,27 +5,27 @@
 //Part Number: GW2AR-LV18QN88C8/I7
 //Device: GW2AR-18
 //Device Version: C
-//Created Time: Tue 08 27 23:23:49 2024
+//Created Time: Sun 08 10 17:12:13 2025
 
-IO_LOC "out_debug[5]" 71;
-IO_PORT "out_debug[5]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
-IO_LOC "out_debug[4]" 72;
-IO_PORT "out_debug[4]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
-IO_LOC "out_debug[3]" 18;
-IO_PORT "out_debug[3]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
-IO_LOC "out_debug[2]" 17;
-IO_PORT "out_debug[2]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
-IO_LOC "out_debug[1]" 16;
-IO_PORT "out_debug[1]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
-IO_LOC "out_debug[0]" 15;
-IO_PORT "out_debug[0]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
-IO_LOC "out_iic_scl" 53;
-IO_PORT "out_iic_scl" PULL_MODE=UP DRIVE=8 OPEN_DRAIN=ON BANK_VCCIO=1.8;
+IO_LOC "out_debug_led[5]" 20;
+IO_PORT "out_debug_led[5]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
+IO_LOC "out_debug_led[4]" 19;
+IO_PORT "out_debug_led[4]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
+IO_LOC "out_debug_led[3]" 18;
+IO_PORT "out_debug_led[3]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
+IO_LOC "out_debug_led[2]" 17;
+IO_PORT "out_debug_led[2]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
+IO_LOC "out_debug_led[1]" 16;
+IO_PORT "out_debug_led[1]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
+IO_LOC "out_debug_led[0]" 15;
+IO_PORT "out_debug_led[0]" PULL_MODE=UP DRIVE=8 BANK_VCCIO=1.8;
 IO_LOC "in_out_iic_sda" 52;
 IO_PORT "in_out_iic_sda" PULL_MODE=UP DRIVE=8 OPEN_DRAIN=ON BANK_VCCIO=1.8;
+IO_LOC "in_out_iic_scl" 53;
+IO_PORT "in_out_iic_scl" PULL_MODE=UP DRIVE=8 OPEN_DRAIN=ON BANK_VCCIO=1.8;
 IO_LOC "in_btn_s2" 87;
 IO_PORT "in_btn_s2" PULL_MODE=UP BANK_VCCIO=1.8;
 IO_LOC "in_btn_s1" 88;
 IO_PORT "in_btn_s1" PULL_MODE=UP BANK_VCCIO=1.8;
-IO_LOC "in_clk" 4;
+IO_LOC "in_clk" 13;
 IO_PORT "in_clk" PULL_MODE=UP BANK_VCCIO=1.8;

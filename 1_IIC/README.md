@@ -34,3 +34,8 @@ IIC Master的各个起始任务State都要增加Pre State负责对Clock等状态
 补充完了所有需要的Pre状态，增加连续执行不同命令的测试用例。目前所有测试用例都通过了模拟测试
 TODO
 实际上机测试，先使用逻辑分析器进行测试
+
+2025/08/10
+实际上机测试了IIC Master模块，能够顺利向Arduino发送字节数据
+TODO
+IIC主机模块还需要更多测试，特别是Clock Stretching测试
